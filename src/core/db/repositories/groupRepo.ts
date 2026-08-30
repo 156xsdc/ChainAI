@@ -34,7 +34,7 @@ export class GroupRepository {
       [
         id,
         input.name ?? "",
-        input.color ?? "#333333",
+        input.color ?? "#dcdcdc",
         input.icon ?? "",
         input.parentId ?? null,
         ts,

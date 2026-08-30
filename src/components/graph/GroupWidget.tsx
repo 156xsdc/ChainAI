@@ -25,9 +25,9 @@ export function GroupWidget({ data }: NodeProps<GroupFlowNode>) {
       className={`group absolute inset-0 rounded-lg border border-dashed transition-colors ${
         collapsed
           ? "bg-neutral-200/35 hover:bg-neutral-200/50"
-          : "border-neutral-200/80 bg-transparent hover:bg-neutral-100/25 hover:border-neutral-300"
+          : "bg-transparent hover:bg-neutral-100/25"
       }`}
-      style={{ borderColor: collapsed ? "#d0d0d0" : "#dcdcdc" }}
+      style={{ borderColor: group.color || "#dcdcdc" }}
       onClick={(e) => {
         e.stopPropagation();
         onToggle(group.id);

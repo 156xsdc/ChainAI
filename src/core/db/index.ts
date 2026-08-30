@@ -61,6 +61,14 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 列已存在
   }
+  // tree_id 列就绪后创建索引（旧库必须先有列）
+  try {
+    await db.execute(
+      `CREATE INDEX IF NOT EXISTS idx_nodes_tree ON nodes(tree_id)`
+    );
+  } catch {
+    // 忽略
+  }
   // 默认树：无树时创建；旧节点归入默认树
   const treeRows = await db.select<{ id: string }>(`SELECT id FROM trees LIMIT 1`);
   if (treeRows.length === 0) {

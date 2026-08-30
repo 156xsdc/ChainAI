@@ -26,7 +26,7 @@ export const SCHEMA_SQL: string[] = [
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
-  `CREATE INDEX IF NOT EXISTS idx_nodes_tree ON nodes(tree_id)`,
+  // 注意：idx_nodes_tree 索引在 initSchema 迁移（ALTER 添加 tree_id 列）后创建，见 index.ts
 
   // 边表：DAG 核心，支持多父节点（合并）
   `CREATE TABLE IF NOT EXISTS edges (

@@ -9,13 +9,19 @@ import { useChatStore } from "./chatStore";
 interface GraphStore {
   /** 用户手动放置的节点位置（nodeId → 左上角坐标） */
   manualPositions: Record<string, { x: number; y: number }>;
+  /** 分组/结构变化版本号（触发树状图数据刷新） */
+  graphVersion: number;
   setManualPosition: (nodeId: string, pos: { x: number; y: number }) => void;
   loadPositions: (positions: Record<string, { x: number; y: number }>) => void;
   resetLayout: () => void;
+  bumpGraphVersion: () => void;
 }
 
 export const useGraphStore = create<GraphStore>((set, get) => ({
   manualPositions: {},
+  graphVersion: 0,
+
+  bumpGraphVersion: () => set((s) => ({ graphVersion: s.graphVersion + 1 })),
 
   setManualPosition: (nodeId, pos) => {
     const next = { ...get().manualPositions, [nodeId]: pos };

@@ -2,8 +2,9 @@
  * 树状图面板：位于聊天区左侧，可拖动调整宽度
  */
 import { useRef, useState } from "react";
-import { LayoutTemplate, Maximize2, X } from "lucide-react";
+import { LayoutTemplate, Maximize2, Trash2, X } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
+import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { GraphCanvas } from "./GraphCanvas";
 
@@ -14,8 +15,19 @@ export function GraphPanel() {
   const setGraphOpen = useUIStore((s) => s.setGraphOpen);
   const setGraphFullscreen = useUIStore((s) => s.setGraphFullscreen);
   const resetLayout = useGraphStore((s) => s.resetLayout);
+  const clearAllChat = useChatStore((s) => s.clearAllChat);
   const [width, setWidth] = useState(380);
   const dragging = useRef(false);
+
+  const handleClearAll = () => {
+    if (
+      window.confirm(
+        "确定清空全部对话吗？\n\n所有节点和消息将移入回收站（30天内可恢复），会话记录一并清空。"
+      )
+    ) {
+      void clearAllChat();
+    }
+  };
 
   const startDrag = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -54,6 +66,13 @@ export function GraphPanel() {
             onClick={() => resetLayout()}
           >
             <LayoutTemplate size={13} />
+          </button>
+          <button
+            className="rounded-md p-1 text-neutral-400 hover:bg-red-50 hover:text-red-500"
+            title="清空全部对话"
+            onClick={handleClearAll}
+          >
+            <Trash2 size={13} />
           </button>
           <button
             className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"

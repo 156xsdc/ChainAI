@@ -124,6 +124,11 @@ interface ChatState {
   /** 便签变化版本号（便签板实时刷新） */
   noteVersion: number;
   bumpNoteVersion: () => void;
+  /** 收藏变化版本号（收藏夹实时刷新） */
+  favVersion: number;
+  bumpFavVersion: () => void;
+  /** 清空全部对话（节点软删除到回收站 + 清会话） */
+  clearAllChat: () => Promise<void>;
   /** 立即执行一次自动清理 */
   cleanupNow: () => Promise<{ branches: number; nodes: number } | null>;
   /** 导出当前整棵树为 Markdown 文档 */
@@ -455,6 +460,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await repos.favorites.add(nodeId);
       await repos.nodes.updateNode(nodeId, { isFavorited: true });
     }
+    get().bumpFavVersion();
     await get().refreshPath();
   },
 
@@ -512,8 +518,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   notifyTypes: { success: true, info: true },
   notifyDuration: 6,
   noteVersion: 0,
+  favVersion: 0,
 
   bumpNoteVersion: () => set((s) => ({ noteVersion: s.noteVersion + 1 })),
+  bumpFavVersion: () => set((s) => ({ favVersion: s.favVersion + 1 })),
   setNotice: (msg, tone = "success") => {
     const { notifyTypes } = get();
     if (tone === "success" && notifyTypes.success === false) return;
@@ -586,6 +594,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().bumpNoteVersion();
     }
     return note;
+  },
+
+  clearAllChat: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    // 全部节点软删除 + 回收站
+    const all = await repos.nodes.getAllActive();
+    for (const n of all) {
+      await repos.nodes.softDeleteNode(n.id);
+      await repos.recycleBin.add(n.id);
+    }
+    // 清空会话
+    await repos.backend.execute(
+      `DELETE FROM sessions WHERE is_active = 1`
+    );
+    // 重置当前节点
+    await repos.settings.set("chat.currentNodeId", null);
+    set({ currentNodeId: null });
+    await get().refreshPath();
+    useGraphStore.getState().bumpGraphVersion();
+    set({
+      notice: `🗑️ 已清空全部对话（${all.length} 个节点移入回收站，可在回收站恢复）`,
+      noticeTone: "info",
+    });
   },
 
   exportMarkdown: async () => {

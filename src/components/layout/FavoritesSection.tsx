@@ -26,6 +26,7 @@ export function FavoritesSection() {
   const navigateTo = useChatStore((s) => s.navigateTo);
   const toggleFavorite = useChatStore((s) => s.toggleFavorite);
   const setNotice = useChatStore((s) => s.setNotice);
+  const favVersion = useChatStore((s) => s.favVersion);
   const [groups, setGroups] = useState<FavoriteGroup[]>([]);
   const [favs, setFavs] = useState<FavItem[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -53,7 +54,7 @@ export function FavoritesSection() {
 
   useEffect(() => {
     void load();
-  }, [repos]);
+  }, [repos, favVersion]);
 
   const createGroup = async () => {
     if (!repos) return;
@@ -89,6 +90,16 @@ export function FavoritesSection() {
       `UPDATE favorite_groups SET color = ? WHERE id = ?`,
       [color.trim(), group.id]
     );
+    void load();
+  };
+
+  const deleteGroup = async (groupId: string) => {
+    if (!repos) return;
+    const g = groups.find((x) => x.id === groupId);
+    if (!g) return;
+    if (!window.confirm(`删除分组「${g.name}」？组内收藏将移到未分组（收藏不会删除）`)) return;
+    await repos.favorites.deleteGroup(groupId);
+    setNotice("🗑️ 已删除收藏分组");
     void load();
   };
 
@@ -128,14 +139,18 @@ export function FavoritesSection() {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
       <div className="mb-2 flex items-center gap-1.5 text-[11px] text-neutral-400">
         <Star size={12} /> 收藏夹
-        <button
-          className="ml-auto rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-          title="新建收藏分组"
-          onClick={() => void createGroup()}
-        >
-          <Plus size={12} />
-        </button>
+        <span className="ml-auto text-[9px] text-neutral-300">
+          {favs.length} 项
+        </span>
       </div>
+
+      {/* 新建分组（明确入口） */}
+      <button
+        className="mb-2 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-neutral-300 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+        onClick={() => void createGroup()}
+      >
+        <Plus size={12} /> 新建收藏分组
+      </button>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {favs.length === 0 ? (
@@ -186,6 +201,13 @@ export function FavoritesSection() {
                       onClick={() => void recolorGroup(g)}
                     >
                       颜色
+                    </button>
+                    <button
+                      className="shrink-0 rounded px-1 text-[9px] text-neutral-300 opacity-0 hover:text-red-500 group-hover/g:opacity-100"
+                      title="删除分组"
+                      onClick={() => void deleteGroup(g.id)}
+                    >
+                      删除
                     </button>
                   </div>
                   {open && (

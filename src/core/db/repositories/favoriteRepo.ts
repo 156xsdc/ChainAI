@@ -103,6 +103,11 @@ export class FavoriteRepository {
     };
   }
 
+  /** 删除分组（组内收藏自动移到未分组，ON DELETE SET NULL） */
+  async deleteGroup(id: string): Promise<void> {
+    await this.db.execute(`DELETE FROM favorite_groups WHERE id = ?`, [id]);
+  }
+
   async listGroups(): Promise<FavoriteGroup[]> {
     const rows = await this.db.select<{
       id: string;

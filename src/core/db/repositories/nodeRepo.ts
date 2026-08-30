@@ -123,12 +123,17 @@ export class NodeRepository {
     return this.getNode(id);
   }
 
-  /** 软删除：置 is_active = 0（回收站逻辑后续接入） */
+  /** 软删除：置 is_active = 0（回收站可恢复） */
   async softDeleteNode(id: string): Promise<void> {
     await this.db.execute(
       `UPDATE nodes SET is_active = 0, updated_at = ? WHERE id = ?`,
       [now(), id]
     );
+  }
+
+  /** 物理删除：彻底移除节点（边/收藏等依赖级联处理） */
+  async hardDeleteNode(id: string): Promise<void> {
+    await this.db.execute(`DELETE FROM nodes WHERE id = ?`, [id]);
   }
 
   // ================= 边 CRUD =================

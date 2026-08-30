@@ -14,6 +14,7 @@ import { summarizeGroup } from "../core/context/aiCompressor";
 import { exportAll, importAll } from "../core/importExport/service";
 import { saveJsonFile, openJsonFile } from "../core/io/files";
 import { createNoteFile } from "../core/notes/noteService";
+import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
 import type { Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
@@ -94,6 +95,8 @@ interface ChatState {
   createNoteFromMessage: (nodeId: string) => Promise<Note | null>;
   /** 创建空白便签 */
   createBlankNote: () => Promise<Note | null>;
+  /** 立即执行一次自动清理 */
+  cleanupNow: () => Promise<{ branches: number; nodes: number } | null>;
 }
 
 let streamController: AbortController | null = null;
@@ -482,5 +485,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       useUIStore.getState().setSidebar("right", true);
     }
     return note;
+  },
+
+  cleanupNow: async () => {
+    const { repos } = get();
+    if (!repos) return null;
+    const cleanupSettings = await repos.settings.get<{
+      enabled?: boolean;
+      days?: number;
+    }>("cleanup", { enabled: true, days: 30 });
+    if (cleanupSettings.enabled === false) return null;
+    const days = cleanupSettings.days ?? 30;
+    const result = await cleanupOnce(repos, days);
+    const purged = await purgeExpired(repos);
+    if (result.branches > 0 || purged > 0) {
+      set({
+        notice: `🧹 已清理 ${result.branches} 个不活跃分支（${result.nodes} 个节点）${
+          purged > 0 ? `；回收站过期清理 ${purged} 项` : ""
+        }`,
+      });
+    }
+    return { branches: result.branches, nodes: result.nodes };
   },
 }));

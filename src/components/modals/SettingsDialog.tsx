@@ -4,11 +4,12 @@
  * 持久化到 settings('ai.providers')
  */
 import { useEffect, useState } from "react";
-import { Check, Download, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
+import { Check, Download, Plus, RefreshCw, Trash2, Upload, Trash } from "lucide-react";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig, ProviderId } from "../../core/ai/types";
 import { useChatStore } from "../../store/chatStore";
 import { Modal } from "../common/Modal";
+import { RecycleBinDialog } from "./RecycleBinDialog";
 
 const PROVIDER_META: Record<
   ProviderId,
@@ -47,14 +48,34 @@ export function SettingsDialog({
   const [testResult, setTestResult] = useState<string | null>(null);
   const exportData = useChatStore((s) => s.exportData);
   const importData = useChatStore((s) => s.importData);
+  const cleanupNow = useChatStore((s) => s.cleanupNow);
+  const [cleanupEnabled, setCleanupEnabled] = useState(true);
+  const [cleanupDays, setCleanupDays] = useState(30);
+  const [recycleBinOpen, setRecycleBinOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
       setConfigs([...providerManager.getConfigs()]);
       setEditing(null);
       setTestResult(null);
+      // 加载清理设置
+      useChatStore
+        .getState()
+        .repos?.settings.get<{ enabled?: boolean; days?: number }>("cleanup", {
+          enabled: true,
+          days: 30,
+        })
+        .then((s) => {
+          setCleanupEnabled(s.enabled !== false);
+          setCleanupDays(s.days ?? 30);
+        });
     }
   }, [open]);
+
+  /** 保存清理设置 */
+  const saveCleanup = (enabled: boolean, days: number) => {
+    useChatStore.getState().repos?.settings.set("cleanup", { enabled, days });
+  };
 
   const persist = async (list: ProviderConfig[]) => {
     providerManager.setConfigs(list);
@@ -88,6 +109,7 @@ export function SettingsDialog({
   };
 
   return (
+    <>
     <Modal open={open} title="AI 设置" onClose={onClose} width={560}>
       <div className="flex flex-col gap-4">
         {/* 配置列表 */}
@@ -160,6 +182,61 @@ export function SettingsDialog({
               </button>
             </div>
           ))}
+        </div>
+
+        {/* 存储管理 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 text-xs text-neutral-500">存储管理</div>
+          <div className="flex flex-col gap-2.5">
+            {/* 自动清理 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs text-neutral-700">自动清理不活跃分支</div>
+                <div className="text-[10px] text-neutral-400">
+                  保护：收藏 / 保留 / 分组 / 便签关联的节点不会被清理
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2">
+                <select
+                  className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
+                  value={cleanupDays}
+                  onChange={(e) => {
+                    const d = Number(e.target.value);
+                    setCleanupDays(d);
+                    saveCleanup(cleanupEnabled, d);
+                  }}
+                >
+                  <option value={7}>7天（激进）</option>
+                  <option value={30}>30天（推荐）</option>
+                  <option value={90}>90天（保守）</option>
+                </select>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-neutral-800"
+                  checked={cleanupEnabled}
+                  onChange={(e) => {
+                    setCleanupEnabled(e.target.checked);
+                    saveCleanup(e.target.checked, cleanupDays);
+                  }}
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+                onClick={() => void cleanupNow()}
+              >
+                <RefreshCw size={12} /> 立即清理
+              </button>
+              <button
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+                onClick={() => setRecycleBinOpen(true)}
+              >
+                <Trash size={12} /> 回收站
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* 数据管理 */}
@@ -315,6 +392,13 @@ export function SettingsDialog({
         )}
       </div>
     </Modal>
+
+    {/* 回收站 */}
+    <RecycleBinDialog
+      open={recycleBinOpen}
+      onClose={() => setRecycleBinOpen(false)}
+    />
+    </>
   );
 }
 

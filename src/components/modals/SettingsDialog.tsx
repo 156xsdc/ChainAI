@@ -48,6 +48,8 @@ export function SettingsDialog({
   const [testResult, setTestResult] = useState<string | null>(null);
   const exportData = useChatStore((s) => s.exportData);
   const importData = useChatStore((s) => s.importData);
+  const exportMarkdown = useChatStore((s) => s.exportMarkdown);
+  const importMarkdown = useChatStore((s) => s.importMarkdown);
   const cleanupNow = useChatStore((s) => s.cleanupNow);
   const [cleanupEnabled, setCleanupEnabled] = useState(true);
   const [cleanupDays, setCleanupDays] = useState(30);
@@ -261,6 +263,20 @@ export function SettingsDialog({
             >
               <Upload size={12} />
               导入 JSON 备份
+            </button>
+            <button
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+              onClick={() => void exportMarkdown()}
+            >
+              <Download size={12} />
+              导出 Markdown
+            </button>
+            <button
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+              onClick={() => void importMarkdown()}
+            >
+              <Upload size={12} />
+              导入 Markdown
             </button>
           </div>
         </div>

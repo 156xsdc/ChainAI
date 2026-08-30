@@ -27,12 +27,29 @@ export async function openJsonFile(): Promise<{
   path: string;
   content: string;
 } | null> {
+  return openTextFile([{ name: "JSON 备份", extensions: ["json"] }]);
+}
+
+/** 保存文本文件（通用） */
+export async function saveTextFile(
+  defaultName: string,
+  content: string,
+  filters: { name: string; extensions: string[] }[]
+): Promise<string | null> {
   if (!inTauri) return null;
-  const path = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "JSON 备份", extensions: ["json"] }],
-  });
+  const path = await save({ defaultPath: defaultName, filters });
+  if (!path) return null;
+  await invoke("write_text_file", { path, content });
+  return path as string;
+}
+
+/** 打开文本文件（通用） */
+export async function openTextFile(filters: {
+  name: string;
+  extensions: string[];
+}[]): Promise<{ path: string; content: string } | null> {
+  if (!inTauri) return null;
+  const path = await open({ multiple: false, directory: false, filters });
   if (!path || Array.isArray(path)) return null;
   const content = await invoke<string>("read_text_file", { path });
   return { path: path as string, content };

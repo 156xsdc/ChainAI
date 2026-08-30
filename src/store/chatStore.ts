@@ -12,7 +12,16 @@ import { Typewriter } from "../core/typing/typewriter";
 import { buildContext, type ContextMessage } from "../core/context/builder";
 import { summarizeGroup } from "../core/context/aiCompressor";
 import { exportAll, importAll } from "../core/importExport/service";
-import { saveJsonFile, openJsonFile } from "../core/io/files";
+import {
+  exportTreeToMarkdown,
+  importMarkdownAsTree,
+} from "../core/importExport/markdown";
+import {
+  saveJsonFile,
+  openJsonFile,
+  saveTextFile,
+  openTextFile,
+} from "../core/io/files";
 import { createNoteFile } from "../core/notes/noteService";
 import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
@@ -100,6 +109,10 @@ interface ChatState {
   createBlankNote: () => Promise<Note | null>;
   /** 立即执行一次自动清理 */
   cleanupNow: () => Promise<{ branches: number; nodes: number } | null>;
+  /** 导出当前整棵树为 Markdown 文档 */
+  exportMarkdown: () => Promise<void>;
+  /** 导入 Markdown 文档为树（追加） */
+  importMarkdown: () => Promise<void>;
 }
 
 let streamController: AbortController | null = null;
@@ -498,6 +511,49 @@ export const useChatStore = create<ChatState>((set, get) => ({
       useUIStore.getState().setSidebar("right", true);
     }
     return note;
+  },
+
+  exportMarkdown: async () => {
+    const { repos, currentNodeId } = get();
+    if (!repos || !currentNodeId) {
+      set({ uiError: "请先创建对话，再导出 Markdown" });
+      return;
+    }
+    try {
+      const path = await repos.nodes.getPathToRoot(currentNodeId);
+      const rootId = path[0]?.node.id ?? currentNodeId;
+      const md = await exportTreeToMarkdown(repos, rootId);
+      const name = `chainai-${new Date().toISOString().slice(0, 10)}.md`;
+      const saved = await saveTextFile(name, md, [
+        { name: "Markdown", extensions: ["md"] },
+      ]);
+      if (saved) set({ notice: `✅ 已导出 Markdown：${saved}` });
+    } catch (err) {
+      set({ uiError: `导出失败：${(err as Error).message}` });
+    }
+  },
+
+  importMarkdown: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    try {
+      const file = await openTextFile([
+        { name: "Markdown", extensions: ["md"] },
+      ]);
+      if (!file) return;
+      const root = await importMarkdownAsTree(repos, file.content);
+      if (root) {
+        await get().navigateTo(root.id);
+        useGraphStore.getState().bumpGraphVersion();
+        set({
+          notice: `📄 已导入 Markdown，根节点：${root.question.slice(0, 20)}`,
+        });
+      } else {
+        set({ uiError: "导入失败：未识别到标题结构（需要 # 标题）" });
+      }
+    } catch (err) {
+      set({ uiError: `导入失败：${(err as Error).message}` });
+    }
   },
 
   cleanupNow: async () => {

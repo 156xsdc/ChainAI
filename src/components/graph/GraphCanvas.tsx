@@ -212,10 +212,9 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   };
 
   /** 导出画布为 PNG（html-to-image） */
-  const exportPng = async () => {
+  const exportPng = async (allNodes: FlowNode[]) => {
     if (!containerRef.current) return;
     try {
-      const allNodes = [...groupNodes, ...rfNodes];
       const nodesBounds = getNodesBounds(allNodes);
       const imageWidth = 1280;
       const imageHeight = 960;
@@ -358,7 +357,6 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           fitViewOptions={{ padding: 0.25 }}
           minZoom={0.15}
           maxZoom={2.5}
-          onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
           className="bg-[#fafafa]"
         >
@@ -366,7 +364,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           <Controls showInteractive={false} position="bottom-left" />
           <button
             className="absolute bottom-3 right-3 z-10 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] text-neutral-500 shadow-sm hover:bg-neutral-100"
-            onClick={() => void exportPng()}
+            onClick={() => void exportPng([...groupNodes, ...rfNodes])}
             title="导出为 PNG 图片"
           >
             🖼 导出 PNG

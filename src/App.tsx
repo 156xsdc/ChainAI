@@ -1,7 +1,7 @@
 /**
  * 根组件：三栏布局 + 初始化 + 快捷键 + 错误提示
  */
-import { useEffect } from "react";
+import { Component, useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useChatStore } from "./store/chatStore";
 import { useUIStore } from "./store/uiStore";
@@ -87,6 +87,47 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
+      <AppContent
+        leftExpanded={leftExpanded}
+        rightExpanded={rightExpanded}
+        graphOpen={graphOpen}
+        graphFullscreen={graphFullscreen}
+        uiError={uiError}
+        notice={notice}
+        noticeTone={noticeTone}
+        notifyDuration={notifyDuration}
+        clearError={clearError}
+        clearNotice={clearNotice}
+      />
+    </ErrorBoundary>
+  );
+}
+
+function AppContent({
+  leftExpanded,
+  rightExpanded,
+  graphOpen,
+  graphFullscreen,
+  uiError,
+  notice,
+  noticeTone,
+  notifyDuration,
+  clearError,
+  clearNotice,
+}: {
+  leftExpanded: boolean;
+  rightExpanded: boolean;
+  graphOpen: boolean;
+  graphFullscreen: boolean;
+  uiError: string | null;
+  notice: string | null;
+  noticeTone: "success" | "info" | "error";
+  notifyDuration: number;
+  clearError: () => void;
+  clearNotice: () => void;
+}) {
+  return (
     <div className="flex h-screen overflow-hidden bg-[#f5f5f5] text-neutral-800">
       {leftExpanded ? <LeftSidebar /> : <Rail side="left" />}
       {graphOpen && !graphFullscreen && <GraphPanel />}
@@ -120,6 +161,47 @@ export default function App() {
       )}
     </div>
   );
+}
+
+/**
+ * 错误边界：渲染崩溃时显示错误信息（避免白屏）
+ */
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex h-screen items-center justify-center bg-[#f5f5f5]">
+          <div className="max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+            <div className="mb-2 text-3xl">⚠️</div>
+            <div className="mb-1 text-sm font-medium text-neutral-800">
+              界面渲染出错
+            </div>
+            <pre className="max-h-52 overflow-auto rounded-lg bg-neutral-50 p-3 text-[11px] leading-relaxed text-red-600">
+              {this.state.error.message}
+              {"\n\n"}
+              {this.state.error.stack}
+            </pre>
+            <button
+              className="mt-3 rounded-xl bg-neutral-800 px-4 py-2 text-xs text-white hover:bg-neutral-700"
+              onClick={() => this.setState({ error: null })}
+            >
+              尝试恢复
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function SoftToast({

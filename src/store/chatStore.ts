@@ -11,6 +11,8 @@ import type { ChatMessage } from "../core/ai/types";
 import { Typewriter } from "../core/typing/typewriter";
 import { buildContext, type ContextMessage } from "../core/context/builder";
 import { summarizeGroup } from "../core/context/aiCompressor";
+import { exportAll, importAll } from "../core/importExport/service";
+import { saveJsonFile, openJsonFile } from "../core/io/files";
 import { TreeService } from "../core/tree/treeService";
 import {
   initAppDatabase,
@@ -77,6 +79,14 @@ interface ChatState {
   stopStreaming: () => void;
   setUiError: (msg: string) => void;
   clearError: () => void;
+  /** 成功通知（左下角 toast） */
+  notice: string | null;
+  setNotice: (msg: string) => void;
+  clearNotice: () => void;
+  /** 导出全部数据为 JSON 备份文件 */
+  exportData: () => Promise<void>;
+  /** 从 JSON 备份文件导入（覆盖模式） */
+  importData: () => Promise<void>;
 }
 
 let streamController: AbortController | null = null;
@@ -400,4 +410,39 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setUiError: (msg) => set({ uiError: msg }),
   clearError: () => set({ uiError: null, initError: null }),
+
+  notice: null,
+  setNotice: (msg) => set({ notice: msg }),
+  clearNotice: () => set({ notice: null }),
+
+  exportData: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    try {
+      const json = await exportAll(repos);
+      const fileName = `chainai-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const path = await saveJsonFile(fileName, json);
+      if (path) set({ notice: `✅ 已导出备份：${path}` });
+    } catch (err) {
+      set({ uiError: `导出失败：${(err as Error).message}` });
+    }
+  },
+
+  importData: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    try {
+      const file = await openJsonFile();
+      if (!file) return;
+      if (!window.confirm("导入将覆盖当前所有数据，确定继续吗？")) return;
+      const result = await importAll(repos, file.content);
+      // 重新初始化（恢复 provider 配置与当前节点）
+      await get().init();
+      set({
+        notice: `✅ 已导入：${result.nodes} 节点 / ${result.edges} 边 / ${result.sessions} 会话`,
+      });
+    } catch (err) {
+      set({ uiError: `导入失败：${(err as Error).message}` });
+    }
+  },
 }));

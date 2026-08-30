@@ -4,7 +4,7 @@
  * 持久化到 settings('ai.providers')
  */
 import { useEffect, useState } from "react";
-import { Check, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Download, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig, ProviderId } from "../../core/ai/types";
 import { useChatStore } from "../../store/chatStore";
@@ -45,6 +45,8 @@ export function SettingsDialog({
   const [editing, setEditing] = useState<ProviderConfig | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const exportData = useChatStore((s) => s.exportData);
+  const importData = useChatStore((s) => s.importData);
 
   useEffect(() => {
     if (open) {
@@ -158,6 +160,32 @@ export function SettingsDialog({
               </button>
             </div>
           ))}
+        </div>
+
+        {/* 数据管理 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs text-neutral-500">数据管理</span>
+            <span className="text-[10px] text-neutral-300">
+              完整备份 / 覆盖恢复（Ctrl+E 导出 · Ctrl+I 导入）
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+              onClick={() => void exportData()}
+            >
+              <Download size={12} />
+              导出 JSON 备份
+            </button>
+            <button
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+              onClick={() => void importData()}
+            >
+              <Upload size={12} />
+              导入 JSON 备份
+            </button>
+          </div>
         </div>
 
         {/* 编辑表单 */}

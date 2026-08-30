@@ -16,7 +16,9 @@ export default function App() {
   const init = useChatStore((s) => s.init);
   const initError = useChatStore((s) => s.initError);
   const uiError = useChatStore((s) => s.uiError);
+  const notice = useChatStore((s) => s.notice);
   const clearError = useChatStore((s) => s.clearError);
+  const clearNotice = useChatStore((s) => s.clearNotice);
   const leftExpanded = useUIStore((s) => s.leftExpanded);
   const rightExpanded = useUIStore((s) => s.rightExpanded);
   const graphOpen = useUIStore((s) => s.graphOpen);
@@ -44,6 +46,12 @@ export default function App() {
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         ui.toggleSidebar("right");
+      } else if (e.ctrlKey && e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        void useChatStore.getState().exportData();
+      } else if (e.ctrlKey && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        void useChatStore.getState().importData();
       }
     };
     window.addEventListener("keydown", handler);
@@ -82,20 +90,47 @@ export default function App() {
       <GraphFullscreen />
 
       {/* 左下角软提醒 */}
-      {uiError && <ErrorToast message={uiError} onClose={clearError} />}
+      {uiError && (
+        <SoftToast
+          message={uiError}
+          tone="error"
+          onClose={clearError}
+        />
+      )}
+      {notice && (
+        <SoftToast message={notice} tone="success" onClose={clearNotice} />
+      )}
     </div>
   );
 }
 
-function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
+function SoftToast({
+  message,
+  tone,
+  onClose,
+}: {
+  message: string;
+  tone: "error" | "success";
+  onClose: () => void;
+}) {
   useEffect(() => {
     const timer = setTimeout(onClose, 6000);
     return () => clearTimeout(timer);
   }, [message, onClose]);
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex max-w-[380px] items-start gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-lg">
-      <span className="text-xs leading-relaxed text-neutral-600">{message}</span>
+    <div
+      className={`fixed bottom-4 left-4 z-50 flex max-w-[420px] items-start gap-2 rounded-2xl border bg-white px-4 py-3 shadow-lg ${
+        tone === "error" ? "border-neutral-200" : "border-neutral-200"
+      }`}
+    >
+      <span
+        className={`text-xs leading-relaxed ${
+          tone === "error" ? "text-neutral-600" : "text-neutral-700"
+        }`}
+      >
+        {message}
+      </span>
       <button
         className="mt-0.5 shrink-0 text-neutral-300 hover:text-neutral-500"
         onClick={onClose}

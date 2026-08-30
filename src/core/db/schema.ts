@@ -28,6 +28,16 @@ export const SCHEMA_SQL: string[] = [
   )`,
   // 注意：idx_nodes_tree 索引在 initSchema 迁移（ALTER 添加 tree_id 列）后创建，见 index.ts
 
+  // 节点回答版本（重新生成保留历史）
+  `CREATE TABLE IF NOT EXISTS node_answers (
+    id         TEXT PRIMARY KEY,
+    node_id    TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    version    INTEGER NOT NULL,
+    content    TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(node_id, version)
+  )`,
+
   // 边表：DAG 核心，支持多父节点（合并）
   `CREATE TABLE IF NOT EXISTS edges (
     id            TEXT PRIMARY KEY,

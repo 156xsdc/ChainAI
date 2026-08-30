@@ -14,6 +14,7 @@ function node(id: string, createdAt = "2026-01-01T00:00:00.000Z"): TreeNode {
     isKept: false,
     isFavorited: false,
     isActive: true,
+    answerVersion: 1,
     createdAt,
     updatedAt: createdAt,
   };

@@ -18,6 +18,7 @@ export interface NodeRow {
   is_kept: number;
   is_favorited: number;
   is_active: number;
+  answer_version: number;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +29,8 @@ export interface TreeNode {
   treeId: string | null;
   question: string;
   answer: string;
+  /** 当前显示的答案版本号 */
+  answerVersion: number;
   type: NodeType;
   summary: string;
   color: string;

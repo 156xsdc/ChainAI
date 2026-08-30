@@ -79,7 +79,11 @@ export class NodeRepository {
     id: string,
     patch: Partial<
       Pick<TreeNode, "question" | "answer" | "summary" | "color" | "type">
-    > & { isKept?: boolean; isFavorited?: boolean }
+    > & {
+      isKept?: boolean;
+      isFavorited?: boolean;
+      answerVersion?: number;
+    }
   ): Promise<TreeNode | null> {
     const sets: string[] = [];
     const params: unknown[] = [];
@@ -111,6 +115,10 @@ export class NodeRepository {
     if (patch.isFavorited !== undefined) {
       sets.push("is_favorited = ?");
       params.push(patch.isFavorited ? 1 : 0);
+    }
+    if (patch.answerVersion !== undefined) {
+      sets.push("answer_version = ?");
+      params.push(patch.answerVersion);
     }
 
     if (sets.length === 0) return this.getNode(id);

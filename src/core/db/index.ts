@@ -15,6 +15,7 @@ import { SettingsRepository } from "./repositories/settingsRepo";
 import { RecycleBinRepository } from "./repositories/recycleBinRepo";
 import { DirectoryRepository } from "./repositories/directoryRepo";
 import { TreeRepository } from "./repositories/treeRepo";
+import { AnswerVersionRepository } from "./repositories/answerVersionRepo";
 
 export { TauriSqlBackend, withTransaction, type SqlBackend } from "./backend";
 export * from "./types";
@@ -27,6 +28,7 @@ export * from "./repositories/settingsRepo";
 export * from "./repositories/recycleBinRepo";
 export * from "./repositories/directoryRepo";
 export * from "./repositories/treeRepo";
+export * from "./repositories/answerVersionRepo";
 
 /** 应用数据仓库集合 */
 export interface AppRepositories {
@@ -40,6 +42,7 @@ export interface AppRepositories {
   recycleBin: RecycleBinRepository;
   directories: DirectoryRepository;
   trees: TreeRepository;
+  answerVersions: AnswerVersionRepository;
 }
 
 /** 对任意 backend 执行建表 */
@@ -58,6 +61,14 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   // 兼容旧库：nodes 表补充 tree_id 列（已存在则忽略）
   try {
     await db.execute(`ALTER TABLE nodes ADD COLUMN tree_id TEXT`);
+  } catch {
+    // 列已存在
+  }
+  // 兼容旧库：nodes 表补充 answer_version 列（已存在则忽略）
+  try {
+    await db.execute(
+      `ALTER TABLE nodes ADD COLUMN answer_version INTEGER NOT NULL DEFAULT 1`
+    );
   } catch {
     // 列已存在
   }
@@ -118,6 +129,7 @@ export function createRepositories(db: SqlBackend): AppRepositories {
     recycleBin: new RecycleBinRepository(db),
     directories: new DirectoryRepository(db),
     trees: new TreeRepository(db),
+    answerVersions: new AnswerVersionRepository(db),
   };
 }
 

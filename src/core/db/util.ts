@@ -27,6 +27,7 @@ export function rowToNode(row: NodeRow): TreeNode {
     isKept: row.is_kept === 1,
     isFavorited: row.is_favorited === 1,
     isActive: row.is_active === 1,
+    answerVersion: row.answer_version ?? 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -145,6 +145,10 @@ interface ChatState {
   deleteTree: (treeId: string) => Promise<void>;
   /** 切换当前树 */
   switchTree: (treeId: string) => Promise<void>;
+  /** 重新生成节点回答（追加新版本，保留历史） */
+  regenerate: (nodeId: string) => Promise<void>;
+  /** 切换节点回答版本（dir: -1 上一个 / +1 下一个） */
+  switchAnswer: (nodeId: string, dir: -1 | 1) => Promise<void>;
   /** 立即执行一次自动清理 */
   cleanupNow: () => Promise<{ branches: number; nodes: number } | null>;
   /** 导出当前整棵树为 Markdown 文档 */
@@ -766,6 +770,98 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ currentTreeId: treeId, currentNodeId: saved });
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
+  },
+
+  regenerate: async (nodeId) => {
+    const { repos, treeService, streaming } = get();
+    if (!repos || !treeService || streaming) return;
+    const node = await repos.nodes.getNode(nodeId);
+    if (!node || !node.question) return;
+    const config = providerManager.getActiveConfig();
+    if (!config) {
+      set({ uiError: "尚未配置 AI 服务，请点击输入卡片右侧的 ⚙ 进行设置" });
+      return;
+    }
+
+    // 上下文：父链 + 当前问题（排除旧回答）
+    const ctx = await treeService.getContextPath(nodeId);
+    const contextMessages: ContextMessage[] = ctx.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    while (
+      contextMessages.length > 0 &&
+      contextMessages[contextMessages.length - 1].role === "assistant"
+    ) {
+      contextMessages.pop();
+    }
+    const messages: ChatMessage[] = contextMessages;
+    if (messages.length === 0) {
+      messages.push({ role: "user", content: node.question });
+    }
+
+    // 流式生成（节流更新）
+    const controller = new AbortController();
+    streamController = controller;
+    set({ streaming: true });
+    let answer = "";
+    let lastRender = 0;
+    const updateBuffer = (text: string) => {
+      const t = Date.now();
+      if (t - lastRender < 80) return;
+      lastRender = t;
+      set((s) => ({
+        streamingBuffer: { ...s.streamingBuffer, [nodeId]: text },
+      }));
+    };
+    try {
+      for await (const chunk of providerManager.chat({
+        messages,
+        signal: controller.signal,
+      })) {
+        if (chunk.delta) {
+          answer += chunk.delta;
+          updateBuffer(answer);
+        }
+      }
+    } catch (err) {
+      const ce = err instanceof ChatError ? err : ChatError.fromError(err);
+      if (ce.code !== "aborted") set({ uiError: ce.message });
+    } finally {
+      streamController = null;
+      if (answer) {
+        const newVersion = await repos.answerVersions.add(nodeId, answer);
+        await repos.nodes.updateNode(nodeId, {
+          answer,
+          answerVersion: newVersion,
+        });
+      }
+      set((s) => {
+        const b = { ...s.streamingBuffer };
+        delete b[nodeId];
+        return { streamingBuffer: b };
+      });
+      set({ streaming: false });
+      await get().refreshPath();
+      useGraphStore.getState().bumpGraphVersion();
+    }
+  },
+
+  switchAnswer: async (nodeId, dir) => {
+    const { repos } = get();
+    if (!repos) return;
+    const node = await repos.nodes.getNode(nodeId);
+    if (!node) return;
+    const versions = await repos.answerVersions.list(nodeId);
+    if (versions.length < 2) return;
+    const idx = versions.findIndex((v) => v.version === node.answerVersion);
+    const next = versions[Math.min(Math.max(idx + dir, 0), versions.length - 1)];
+    if (!next || next.version === node.answerVersion) return;
+    await repos.nodes.updateNode(nodeId, {
+      answer: next.content,
+      answerVersion: next.version,
+    });
+    await get().refreshPath();
   },
 
   exportMarkdown: async () => {

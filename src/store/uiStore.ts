@@ -19,6 +19,8 @@ interface UIState {
   leftPanelWidth: number;
   /** 专注模式：树状图 + 便签并排（无聊天区） */
   focusMode: boolean;
+  /** 进入专注前的便签板状态（退出时恢复） */
+  focusPrevRightExpanded: boolean;
 
   setLeftPanel: (p: LeftPanel) => void;
   toggleLeftPanel: (p: Exclude<LeftPanel, null>) => void;
@@ -37,16 +39,24 @@ export const useUIStore = create<UIState>((set) => ({
   searchOpen: false,
   leftPanelWidth: 380,
   focusMode: false,
+  focusPrevRightExpanded: false,
 
   setLeftPanel: (p) => set({ leftPanel: p }),
   setLeftPanelWidth: (w) => set({ leftPanelWidth: w }),
   setFocusMode: (v) => set({ focusMode: v }),
   toggleFocusMode: () =>
-    set((s) => ({
-      focusMode: !s.focusMode,
-      // 进入专注时自动展开便签板
-      rightExpanded: !s.focusMode ? true : s.rightExpanded,
-    })),
+    set((s) => {
+      if (s.focusMode) {
+        // 退出：恢复进入前的便签板状态
+        return { focusMode: false, rightExpanded: s.focusPrevRightExpanded };
+      }
+      // 进入：记录当前便签板状态，并强制展开便签板
+      return {
+        focusMode: true,
+        focusPrevRightExpanded: s.rightExpanded,
+        rightExpanded: true,
+      };
+    }),
   toggleLeftPanel: (p) =>
     set((s) => ({ leftPanel: s.leftPanel === p ? null : p })),
   setSidebar: (side, expanded) =>

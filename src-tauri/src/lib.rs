@@ -34,6 +34,21 @@ fn delete_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 追加文本到文件（错误日志用）
+#[tauri::command]
+fn append_text_file(path: String, content: String) -> Result<(), String> {
+    use std::io::Write;
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| e.to_string())?;
+    f.write_all(content.as_bytes()).map_err(|e| e.to_string())
+}
+
 /// 写入二进制文件（PNG 导出用，base64 传入）
 #[tauri::command]
 fn write_binary_file(path: String, base64_content: String) -> Result<(), String> {
@@ -58,6 +73,7 @@ pub fn run() {
             greet,
             read_text_file,
             write_text_file,
+            append_text_file,
             delete_file,
             write_binary_file
         ])

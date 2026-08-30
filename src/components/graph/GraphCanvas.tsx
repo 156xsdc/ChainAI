@@ -5,7 +5,7 @@
  * - 框选（左键拖空白）→ 创建分组
  * - 分组：虚线框 + 点击折叠/展开 + 右键菜单
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -246,7 +246,105 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     }
   };
 
-  // ---- 数据组装 ----
+  // ---- 数据组装（useMemo 稳定引用：避免 React Flow 同步循环导致无限渲染）----
+  const collapsedIds = useMemo(
+    () =>
+      data
+        ? new Set(
+            data.groups
+              .filter((g) => g.group.collapsed)
+              .flatMap((g) => g.memberIds)
+          )
+        : new Set<string>(),
+    [data]
+  );
+
+  const rfNodes = useMemo<FlowNode[]>(() => {
+    if (!data) return [];
+    return data.nodes
+      .filter((n) => !collapsedIds.has(n.id))
+      .map((n) => {
+        const pos = nodePos(n.id);
+        return {
+          id: n.id,
+          type: "tree",
+          position: { x: pos.x, y: pos.y },
+          width: NODE_W,
+          height: NODE_H,
+          data: {
+            node: n,
+            isCurrent: n.id === data.currentId,
+            isOnPath: data.pathIds.has(n.id),
+          },
+        };
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, collapsedIds, manualPositions]);
+
+  // 分组虚线框节点（在成员下方）
+  const groupNodes = useMemo<GroupFlowNode[]>(() => {
+    if (!data) return [];
+    return data.groups
+      .filter((g) => g.memberIds.length > 0)
+      .map((g) => {
+        const positions = g.memberIds.map(nodePos);
+        const minX = Math.min(...positions.map((p) => p.x)) - GROUP_PAD;
+        const minY = Math.min(...positions.map((p) => p.y)) - GROUP_PAD;
+        const maxX = Math.max(...positions.map((p) => p.x + NODE_W)) + GROUP_PAD;
+        const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + GROUP_PAD;
+        return {
+          id: `group-${g.group.id}`,
+          type: "group" as const,
+          position: { x: minX, y: minY },
+          width: maxX - minX,
+          height: maxY - minY,
+          draggable: false,
+          selectable: false,
+          zIndex: -1,
+          data: {
+            group: g.group,
+            memberCount: g.memberIds.length,
+            collapsed: g.group.collapsed,
+            onToggle: toggleGroup,
+            onContextMenu: (e: React.MouseEvent, group: NodeGroup) => {
+              setGroupMenu({ x: e.clientX, y: e.clientY, group });
+            },
+          },
+        };
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, manualPositions]);
+
+  const rfEdges = useMemo<Edge[]>(() => {
+    if (!data) return [];
+    return data.edges
+      .filter((e) => !collapsedIds.has(e.parentId) && !collapsedIds.has(e.childId))
+      .map((e) => ({
+        id: e.id,
+        source: e.parentId,
+        target: e.childId,
+        type: "straight",
+        style:
+          e.relationType === "non_inherit"
+            ? { stroke: "#c9c9c9", strokeDasharray: "5 4", strokeWidth: 1.2 }
+            : { stroke: "#9a9a9a", strokeWidth: 1.2 },
+      }));
+  }, [data, collapsedIds]);
+
+  // 选择回调：集合无变化时返回原引用，避免触发重渲染循环
+  const handleSelectionChange = useCallback<OnSelectionChangeFunc>(
+    (params) => {
+      const ids = params.nodes.map((n) => n.id);
+      setSelectedIds((prev) => {
+        if (prev.size === ids.length && ids.every((id) => prev.has(id))) {
+          return prev;
+        }
+        return new Set(ids);
+      });
+    },
+    []
+  );
+
   if (!data || data.nodes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-center text-xs text-neutral-300">
@@ -256,75 +354,6 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       </div>
     );
   }
-
-  const collapsedIds = new Set(
-    data.groups.filter((g) => g.group.collapsed).flatMap((g) => g.memberIds)
-  );
-
-  const rfNodes: FlowNode[] = data.nodes
-    .filter((n) => !collapsedIds.has(n.id))
-    .map((n) => {
-      const pos = nodePos(n.id);
-      return {
-        id: n.id,
-        type: "tree",
-        position: { x: pos.x, y: pos.y },
-        width: NODE_W,
-        height: NODE_H,
-        data: {
-          node: n,
-          isCurrent: n.id === data.currentId,
-          isOnPath: data.pathIds.has(n.id),
-        },
-      };
-    });
-
-  // 分组虚线框节点（在成员下方）
-  const groupNodes: GroupFlowNode[] = data.groups
-    .filter((g) => g.memberIds.length > 0)
-    .map((g) => {
-      const positions = g.memberIds.map(nodePos);
-      const minX = Math.min(...positions.map((p) => p.x)) - GROUP_PAD;
-      const minY = Math.min(...positions.map((p) => p.y)) - GROUP_PAD;
-      const maxX = Math.max(...positions.map((p) => p.x + NODE_W)) + GROUP_PAD;
-      const maxY = Math.max(...positions.map((p) => p.y + NODE_H)) + GROUP_PAD;
-      return {
-        id: `group-${g.group.id}`,
-        type: "group" as const,
-        position: { x: minX, y: minY },
-        width: maxX - minX,
-        height: maxY - minY,
-        draggable: false,
-        selectable: false,
-        zIndex: -1,
-        data: {
-          group: g.group,
-          memberCount: g.memberIds.length,
-          collapsed: g.group.collapsed,
-          onToggle: toggleGroup,
-          onContextMenu: (e: React.MouseEvent, group: NodeGroup) => {
-            setGroupMenu({ x: e.clientX, y: e.clientY, group });
-          },
-        },
-      };
-    });
-
-  const rfEdges: Edge[] = data.edges
-    .filter((e) => !collapsedIds.has(e.parentId) && !collapsedIds.has(e.childId))
-    .map((e) => ({
-      id: e.id,
-      source: e.parentId,
-      target: e.childId,
-      type: "straight",
-      style:
-        e.relationType === "non_inherit"
-          ? { stroke: "#c9c9c9", strokeDasharray: "5 4", strokeWidth: 1.2 }
-          : { stroke: "#9a9a9a", strokeWidth: 1.2 },
-    }));
-
-  const handleSelectionChange: OnSelectionChangeFunc = (params) => {
-    setSelectedIds(new Set(params.nodes.map((n) => n.id)));
-  };
 
   return (
     <>

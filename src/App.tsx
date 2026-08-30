@@ -165,6 +165,7 @@ function AppContent({
 
 /**
  * 错误边界：渲染崩溃时显示错误信息（避免白屏）
+ * 同时把错误写入日志文件（文档/chainai-error.log），便于定位
  */
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -174,6 +175,23 @@ class ErrorBoundary extends Component<
 
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+
+  componentDidCatch(error: Error, info: unknown) {
+    void (async () => {
+      try {
+        const { documentDir } = await import("@tauri-apps/api/path");
+        const { invoke } = await import("@tauri-apps/api/core");
+        const dir = await documentDir();
+        const content = `[${new Date().toISOString()}]\n${error.message}\n${error.stack ?? ""}\n${JSON.stringify(info)}\n\n`;
+        await invoke("append_text_file", {
+          path: `${dir}/chainai-error.log`,
+          content,
+        });
+      } catch {
+        // 日志写入失败忽略
+      }
+    })();
   }
 
   render() {

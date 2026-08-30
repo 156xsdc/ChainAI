@@ -13,6 +13,9 @@ import { buildContext, type ContextMessage } from "../core/context/builder";
 import { summarizeGroup } from "../core/context/aiCompressor";
 import { exportAll, importAll } from "../core/importExport/service";
 import { saveJsonFile, openJsonFile } from "../core/io/files";
+import { createNoteFile } from "../core/notes/noteService";
+import { useUIStore } from "./uiStore";
+import type { Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
 import {
   initAppDatabase,
@@ -87,6 +90,10 @@ interface ChatState {
   exportData: () => Promise<void>;
   /** 从 JSON 备份文件导入（覆盖模式） */
   importData: () => Promise<void>;
+  /** 从消息创建便签（关联节点） */
+  createNoteFromMessage: (nodeId: string) => Promise<Note | null>;
+  /** 创建空白便签 */
+  createBlankNote: () => Promise<Note | null>;
 }
 
 let streamController: AbortController | null = null;
@@ -444,5 +451,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (err) {
       set({ uiError: `导入失败：${(err as Error).message}` });
     }
+  },
+
+  createNoteFromMessage: async (nodeId) => {
+    const { repos } = get();
+    if (!repos) return null;
+    const node = await repos.nodes.getNode(nodeId);
+    if (!node) return null;
+    const content = `**用户：**${node.question || "（无）"}\n\n${
+      node.answer ? `**AI：**${node.answer}` : ""
+    }`;
+    const note = await createNoteFile(repos, {
+      title: node.question.slice(0, 20) || "消息便签",
+      content,
+      nodeId,
+      tags: [],
+    });
+    if (note) {
+      useUIStore.getState().setSidebar("right", true);
+      set({ notice: "📝 已创建便签" });
+    }
+    return note;
+  },
+
+  createBlankNote: async () => {
+    const { repos } = get();
+    if (!repos) return null;
+    const note = await createNoteFile(repos, { title: "新便签", content: "" });
+    if (note) {
+      useUIStore.getState().setSidebar("right", true);
+    }
+    return note;
   },
 }));

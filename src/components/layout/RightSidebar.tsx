@@ -1,36 +1,232 @@
 /**
- * 右侧便签板（完全展开）
- * 占位：便签列表即将接入（便签文件存储机制）
+ * 右侧便签板：Markdown 便签的列表 / 编辑 / 自动保存
+ * 内容存独立 .md 文件，元数据存 SQLite
  */
-import { ChevronsRight, StickyNote } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronsRight, CornerUpRight, Plus, StickyNote, Trash2 } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
+import { useChatStore } from "../../store/chatStore";
+import {
+  deleteNoteFile,
+  readNoteContent,
+  writeNoteContent,
+} from "../../core/notes/noteService";
+import type { Note } from "../../core/db";
+
+const COLORS = ["#fafafa", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#f3e8ff"];
 
 export function RightSidebar() {
   const setSidebar = useUIStore((s) => s.setSidebar);
+  const repos = useChatStore((s) => s.repos);
+  const createBlankNote = useChatStore((s) => s.createBlankNote);
+  const navigateTo = useChatStore((s) => s.navigateTo);
+
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [content, setContent] = useState("");
+  const [title, setTitle] = useState("");
+  const [color, setColor] = useState("#fafafa");
+  const [tagsText, setTagsText] = useState("");
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadNotes = async () => {
+    if (!repos) return;
+    const list = await repos.notes.listAll();
+    setNotes(list);
+  };
+
+  useEffect(() => {
+    void loadNotes();
+  }, [repos]);
+
+  // 选中便签 → 加载内容
+  const selectNote = async (note: Note) => {
+    setSelectedId(note.id);
+    setTitle(note.title);
+    setColor(note.color);
+    setTagsText(note.tags.join(", "));
+    setContent(await readNoteContent(repos!, note));
+  };
+
+  // 自动保存（防抖）
+  const scheduleSave = (note: Note, field: Partial<Pick<Note, "title" | "color" | "tags">> = {}) => {
+    if (!repos) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      void repos.notes.update(note.id, field);
+      void writeNoteContent(repos, note, content);
+      void loadNotes();
+    }, 600);
+  };
+
+  const handleContentChange = (text: string) => {
+    setContent(text);
+    const note = notes.find((n) => n.id === selectedId);
+    if (note) scheduleSave(note);
+  };
+
+  const handleTitleChange = (t: string) => {
+    setTitle(t);
+    const note = notes.find((n) => n.id === selectedId);
+    if (note) scheduleSave(note, { title: t });
+  };
+
+  const handleColorChange = (c: string) => {
+    setColor(c);
+    const note = notes.find((n) => n.id === selectedId);
+    if (note) scheduleSave(note, { color: c });
+  };
+
+  const handleTagsChange = (t: string) => {
+    setTagsText(t);
+    const note = notes.find((n) => n.id === selectedId);
+    if (note) {
+      scheduleSave(note, {
+        tags: t.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+      });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!repos || !selectedId) return;
+    const note = notes.find((n) => n.id === selectedId);
+    if (!note) return;
+    if (!window.confirm(`删除便签「${note.title}」？（文件 ${note.filePath}）`)) return;
+    await deleteNoteFile(repos, note);
+    setSelectedId(null);
+    void loadNotes();
+  };
+
+  const selected = notes.find((n) => n.id === selectedId);
 
   return (
-    <aside className="flex w-[250px] shrink-0 flex-col border-l border-neutral-200 bg-white">
-      <div className="flex items-center justify-between border-b border-neutral-100 p-3">
+    <aside className="flex w-[280px] shrink-0 flex-col border-l border-neutral-200 bg-white">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between border-b border-neutral-100 px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] text-neutral-400">
           <StickyNote size={12} /> 便签板
         </div>
-        <button
-          className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
-          onClick={() => setSidebar("right", false)}
-          title="收起 (Ctrl+Shift+N)"
-        >
-          <ChevronsRight size={13} />
-        </button>
-      </div>
-
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <StickyNote size={28} strokeWidth={1} className="text-neutral-200" />
-        <div className="text-xs text-neutral-300">
-          便签板即将上线
-          <br />
-          （便签将以 Markdown 文件存储）
+        <div className="flex items-center gap-0.5">
+          <button
+            className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+            title="新建便签 (Ctrl+N)"
+            onClick={() => void createBlankNote()}
+          >
+            <Plus size={13} />
+          </button>
+          <button
+            className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+            onClick={() => setSidebar("right", false)}
+            title="收起 (Ctrl+Shift+N)"
+          >
+            <ChevronsRight size={13} />
+          </button>
         </div>
       </div>
+
+      {/* 列表 */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {notes.length === 0 && !selected && (
+          <div className="flex flex-col items-center gap-2 py-10 text-center">
+            <StickyNote size={26} strokeWidth={1} className="text-neutral-200" />
+            <div className="text-xs text-neutral-300">
+              暂无便签
+              <br />
+              （右键消息可快速创建）
+            </div>
+          </div>
+        )}
+
+        {!selected &&
+          notes.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => void selectNote(n)}
+              className="mb-1.5 flex w-full items-start gap-2 rounded-xl border border-neutral-200 px-2.5 py-2 text-left hover:border-neutral-300 hover:shadow-sm"
+              style={{ background: n.color }}
+            >
+              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full" style={{ background: "#b0b0b0" }} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-neutral-800">
+                  {n.title || "未命名便签"}
+                </span>
+                <span className="mt-0.5 block truncate text-[10px] text-neutral-400">
+                  {n.tags.length > 0 ? `#${n.tags.join(" #")}` : new Date(n.updatedAt).toLocaleString()}
+                </span>
+              </span>
+              {n.nodeId && (
+                <span
+                  className="shrink-0 rounded bg-neutral-200/60 px-1 text-[9px] text-neutral-500"
+                  title="已关联对话节点"
+                >
+                  节点
+                </span>
+              )}
+            </button>
+          ))}
+      </div>
+
+      {/* 编辑视图 */}
+      {selected && (
+        <div className="flex min-h-0 flex-1 flex-col border-t border-neutral-100">
+          <div className="flex items-center gap-1.5 px-3 pt-2">
+            <input
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              className="min-w-0 flex-1 rounded-lg bg-transparent px-1 py-0.5 text-sm font-medium text-neutral-800 outline-none hover:bg-neutral-50 focus:bg-neutral-50"
+              placeholder="便签标题"
+            />
+            <button
+              className="shrink-0 rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+              title="关联节点跳转"
+              disabled={!selected.nodeId}
+              onClick={() => selected.nodeId && navigateTo(selected.nodeId)}
+            >
+              <CornerUpRight size={13} />
+            </button>
+            <button
+              className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-red-500"
+              title="删除便签"
+              onClick={() => void handleDelete()}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+
+          {/* 颜色 + 标签 */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5">
+            <div className="flex items-center gap-1">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  className={`h-4 w-4 rounded-full border transition-transform ${
+                    color === c ? "scale-110 border-neutral-600" : "border-neutral-200"
+                  }`}
+                  style={{ background: c }}
+                  onClick={() => handleColorChange(c)}
+                />
+              ))}
+            </div>
+            <input
+              value={tagsText}
+              onChange={(e) => handleTagsChange(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
+              placeholder="标签（逗号分隔）"
+            />
+          </div>
+
+          <textarea
+            value={content}
+            onChange={(e) => handleContentChange(e.target.value)}
+            className="min-h-0 flex-1 resize-none bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed text-neutral-700 outline-none"
+            placeholder="支持 Markdown 格式..."
+            spellCheck={false}
+          />
+          <div className="px-3 py-1 text-[9px] text-neutral-300">
+            {selected.filePath}
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

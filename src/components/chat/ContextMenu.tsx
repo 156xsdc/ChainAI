@@ -4,6 +4,7 @@
 import { useEffect } from "react";
 import { Copy, Star, StickyNote } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
+import { useUIStore } from "../../store/uiStore";
 
 interface ContextMenuProps {
   x: number;
@@ -14,7 +15,9 @@ interface ContextMenuProps {
 
 export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
   const toggleFavorite = useChatStore((s) => s.toggleFavorite);
+  const createNoteFromMessage = useChatStore((s) => s.createNoteFromMessage);
   const repos = useChatStore((s) => s.repos);
+  const setSidebar = useUIStore((s) => s.setSidebar);
 
   useEffect(() => {
     const handler = () => onClose();
@@ -62,8 +65,11 @@ export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
       <MenuItem
         icon={<StickyNote size={13} />}
         label="创建便签"
-        disabled
-        onClick={onClose}
+        onClick={async () => {
+          const note = await createNoteFromMessage(nodeId);
+          if (note) setSidebar("right", true);
+          onClose();
+        }}
       />
     </div>
   );

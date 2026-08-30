@@ -46,6 +46,9 @@ export default function App() {
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         ui.toggleSidebar("right");
+      } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        void useChatStore.getState().createBlankNote();
       } else if (e.ctrlKey && e.key.toLowerCase() === "e") {
         e.preventDefault();
         void useChatStore.getState().exportData();

@@ -320,6 +320,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     await repos.settings.set("chat.currentNodeId", nodeId);
 
+    // 立即刷新：用户消息显示到聊天区
+    await get().refreshPath();
+
     // 构建上下文：继承模式 + 时间权重压缩
     set({ preparing: true });
     const session = await repos.sessions.getByStartNode(nodeId);
@@ -364,7 +367,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       enabled?: boolean;
       threshold?: number;
       speed?: number;
-    }>("render.typewriter", { enabled: true, threshold: 200, speed: 30 });
+    }>("render.typewriter", { enabled: true, threshold: 20, speed: 30 });
 
     // 流式调用
     const controller = new AbortController();
@@ -386,7 +389,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       twSettings.enabled === false
         ? null
         : new Typewriter(updateBuffer, {
-            threshold: twSettings.threshold ?? 200,
+            threshold: twSettings.threshold ?? 20,
             charsPerSecond: twSettings.speed ?? 30,
           });
 

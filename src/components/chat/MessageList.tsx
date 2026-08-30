@@ -12,6 +12,8 @@ import { Modal } from "../common/Modal";
 export function MessageList() {
   const path = useChatStore((s) => s.path);
   const streaming = useChatStore((s) => s.streaming);
+  const preparing = useChatStore((s) => s.preparing);
+  const currentNodeId = useChatStore((s) => s.currentNodeId);
   const streamingBuffer = useChatStore((s) => s.streamingBuffer);
   const repos = useChatStore((s) => s.repos);
   const navigateTo = useChatStore((s) => s.navigateTo);
@@ -113,6 +115,32 @@ export function MessageList() {
             />
           );
         })}
+
+        {/* 发送中的状态：准备上下文 / AI 生成（打字机） */}
+        {(preparing || streaming) && currentNodeId && (
+          <div key="generating" data-message>
+            {preparing ? (
+              <div className="flex items-center gap-2 py-1 text-xs text-neutral-400">
+                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-200 border-t-neutral-600" />
+                正在准备上下文（压缩历史消息）...
+              </div>
+            ) : (
+              <MessageItem
+                item={{
+                  kind: "message",
+                  role: "assistant",
+                  nodeId: currentNodeId,
+                  content: streamingBuffer[currentNodeId] ?? "",
+                }}
+                isStreaming
+                onContextMenu={(e, nodeId) => {
+                  e.preventDefault();
+                  setMenu({ x: e.clientX, y: e.clientY, nodeId });
+                }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {menu && (

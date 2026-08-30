@@ -494,10 +494,23 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         onClose={() => setColorDialog(null)}
         onConfirm={(color) => {
           const g = colorDialog?.group;
-          if (g && repos) {
-            void repos.groups.updateGroup(g.id, { color });
-            bumpGraphVersion();
+          if (!g) {
+            setUiError("改色失败：未找到分组");
+            return;
           }
+          if (!repos) {
+            setUiError("改色失败：数据库未就绪");
+            return;
+          }
+          void (async () => {
+            try {
+              await repos.groups.updateGroup(g.id, { color });
+              bumpGraphVersion();
+              setNotice(`🎨 已应用颜色 ${color}`);
+            } catch (err) {
+              setUiError(`改色失败：${(err as Error).message}`);
+            }
+          })();
         }}
       />
 

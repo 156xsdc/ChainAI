@@ -3,7 +3,7 @@
  * 支持 DAG：多父节点（合并）、实线/虚线（继承/不继承）
  */
 import type { SqlBackend } from "../backend";
-import { newId, now, rowToEdge, rowToNode } from "../util";
+import { chunkArr, newId, now, rowToEdge, rowToNode } from "../util";
 import type {
   NodeRow,
   NodeType,
@@ -140,6 +140,18 @@ export class NodeRepository {
       `UPDATE nodes SET is_active = 0, updated_at = ? WHERE id = ?`,
       [now(), id]
     );
+  }
+
+  /** 批量软删除（分块，避免超过 SQLite 999 变量上限） */
+  async softDeleteMany(ids: string[]): Promise<void> {
+    const ts = now();
+    for (const chunk of chunkArr(ids, 400)) {
+      const placeholders = chunk.map(() => "?").join(",");
+      await this.db.execute(
+        `UPDATE nodes SET is_active = 0, updated_at = ? WHERE id IN (${placeholders})`,
+        [ts, ...chunk]
+      );
+    }
   }
 
   /** 物理删除：彻底移除节点（边/收藏等依赖级联处理） */

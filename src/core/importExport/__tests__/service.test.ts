@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { exportAll, importAll, EXPORT_TABLES } from "../service";
+import { exportAll, importAll, validateBackup, EXPORT_TABLES } from "../service";
 import { createTestDb } from "../../db/__tests__/helpers";
 import type { AppRepositories } from "../../db";
 
@@ -73,5 +73,35 @@ describe("JSON 导入导出", () => {
     const nodes = await repo.nodes.getAllActive();
     expect(nodes).toHaveLength(1);
     expect(nodes[0].question).toBe("旧数据");
+  });
+
+  it("未知列（更新版本备份）在清空数据前被拒绝", async () => {
+    // 现有数据必须保留
+    await repo.nodes.createNode({ question: "保留我" });
+    await repo.settings.set("theme", "dark");
+
+    const json = await exportAll(repo);
+    const data = JSON.parse(json);
+    // 模拟更新版本导出的备份：nodes 多一列
+    data.tables.nodes.push({ id: "x", question: "q", future_column: 1 });
+
+    await expect(importAll(repo, JSON.stringify(data))).rejects.toThrow(
+      "未知列"
+    );
+
+    // 现有数据未被触碰
+    const nodes = await repo.nodes.getAllActive();
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].question).toBe("保留我");
+    expect(await repo.settings.get("theme", "")).toBe("dark");
+  });
+
+  it("validateBackup 单独校验不写库", async () => {
+    const json = await exportAll(repo);
+    const data = JSON.parse(json);
+    await expect(validateBackup(repo, data)).resolves.toBeUndefined();
+
+    data.tables.edges[0] = { bad_column: 1 };
+    await expect(validateBackup(repo, data)).rejects.toThrow("未知列");
   });
 });

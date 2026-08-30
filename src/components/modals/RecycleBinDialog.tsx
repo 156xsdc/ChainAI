@@ -27,21 +27,16 @@ export function RecycleBinDialog({
 
   const load = useCallback(async () => {
     if (!repos) return;
-    const records = await repos.recycleBin.list();
-    const list: BinItem[] = [];
-    for (const r of records) {
-      const rows = await repos.backend.select<{ question: string }>(
-        `SELECT question FROM nodes WHERE id = ?`,
-        [r.node_id]
-      );
-      list.push({
+    // 单次 JOIN 查询（避免 N+1）
+    const records = await repos.recycleBin.listWithQuestions();
+    setItems(
+      records.map((r) => ({
         nodeId: r.node_id,
-        question: rows[0]?.question || "（空节点）",
+        question: r.question || "（空节点）",
         deletedAt: r.deleted_at,
         expiresAt: r.expires_at,
-      });
-    }
-    setItems(list);
+      }))
+    );
   }, [repos]);
 
   useEffect(() => {

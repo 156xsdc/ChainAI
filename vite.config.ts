@@ -20,6 +20,20 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+
+  // 拆包：稳定大依赖独立成 chunk（mermaid/echarts 已是点击时懒加载，不进主包）
+  build: {
+    chunkSizeWarningLimit: 1200, // 仅对"急加载"主包设限；echarts 懒加载 chunk 大是正常的
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          flow: ["@xyflow/react"],
+          markdown: ["react-markdown", "remark-gfm"],
+        },
+      },
+    },
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

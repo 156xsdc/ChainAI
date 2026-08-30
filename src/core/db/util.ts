@@ -11,6 +11,15 @@ export function newId(): string {
   return crypto.randomUUID();
 }
 
+/** 数组分块（用于批量 SQL 参数，避免超过 SQLite 999 变量上限） */
+export function chunkArr<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
 export function now(): string {
   return new Date().toISOString();
 }

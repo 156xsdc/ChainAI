@@ -93,7 +93,8 @@ interface ChatState {
   refreshPath: () => Promise<void>;
   navigateTo: (nodeId: string) => Promise<void>;
   navigateToParent: () => Promise<void>;
-  sendMessage: (text: string) => Promise<void>;
+  /** @returns 是否已受理（false = 未创建节点，如未配置AI/创建失败） */
+  sendMessage: (text: string) => Promise<boolean>;
   createBranch: (parentNodeId: string, params?: CreateBranchParams) => Promise<string>;
   createNewStart: (parentNodeId: string) => Promise<string>;
   createMerge: (
@@ -328,7 +329,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { repos, treeService, currentNodeId, currentTreeId, streaming } =
       get();
     const trimmed = text.trim();
-    if (!repos || !treeService || !trimmed || streaming) return;
+    if (!repos || !treeService || !trimmed || streaming) return false;
     // 无当前树时自动创建（首次使用）
     let treeId = currentTreeId;
     if (!treeId) {
@@ -340,7 +341,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const config = providerManager.getActiveConfig();
     if (!config) {
       set({ uiError: "尚未配置 AI 服务，请点击输入卡片左侧的 ⚙ 进行设置" });
-      return;
+      return false;
     }
 
     let nodeId = currentNodeId;
@@ -370,7 +371,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } catch (err) {
       set({ uiError: `创建节点失败：${(err as Error).message}` });
-      return;
+      return false;
     }
 
     await repos.settings.set(`chat.currentNodeId.${treeId}`, nodeId);
@@ -496,6 +497,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ streaming: false });
       await get().refreshPath();
     }
+    return true;
   },
 
   createBranch: async (parentNodeId, params) => {
@@ -569,14 +571,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!repos) return { deletedCount: 0 };
 
     const descendants = await repos.nodes.getDescendantIds(nodeId);
-    // 软删除全部子树节点
-    for (const id of descendants) {
-      await repos.nodes.softDeleteNode(id);
-    }
-    // 回收站记录
-    for (const id of descendants) {
-      await repos.recycleBin.add(id);
-    }
+    // 软删除全部子树节点 + 回收站记录（批量）
+    await repos.nodes.softDeleteMany(descendants);
+    await repos.recycleBin.addMany(descendants);
 
     // 若当前节点在删除的子树上 → 跳转到该分支的父节点
     if (currentNodeId && descendants.includes(currentNodeId)) {
@@ -700,14 +697,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!repos) return;
     // 当前树全部节点软删除 + 回收站
     const all = await repos.nodes.getAllActive(currentTreeId);
-    for (const n of all) {
-      await repos.nodes.softDeleteNode(n.id);
-      await repos.recycleBin.add(n.id);
+    // 批量软删除 + 回收站记录
+    await repos.nodes.softDeleteMany(all.map((n) => n.id));
+    await repos.recycleBin.addMany(all.map((n) => n.id));
+    // 清空会话（仅当前树：会话通过 start_node_id 关联节点，节点通过 tree_id 归属树）
+    if (currentTreeId) {
+      await repos.backend.execute(
+        `DELETE FROM sessions WHERE is_active = 1 AND start_node_id IN (SELECT id FROM nodes WHERE tree_id = ?)`,
+        [currentTreeId]
+      );
+    } else {
+      await repos.backend.execute(`DELETE FROM sessions WHERE is_active = 1`);
     }
-    // 清空会话
-    await repos.backend.execute(
-      `DELETE FROM sessions WHERE is_active = 1`
-    );
     // 重置当前节点
     if (currentTreeId) {
       await repos.settings.set(`chat.currentNodeId.${currentTreeId}`, null);
@@ -749,10 +750,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!repos) return;
     // 树内节点软删除 + 回收站
     const nodes = await repos.nodes.getAllActive(treeId);
-    for (const n of nodes) {
-      await repos.nodes.softDeleteNode(n.id);
-      await repos.recycleBin.add(n.id);
-    }
+    // 批量软删除 + 回收站记录
+    await repos.nodes.softDeleteMany(nodes.map((n) => n.id));
+    await repos.recycleBin.addMany(nodes.map((n) => n.id));
+    // 清理该树的会话（避免孤儿会话残留）
+    await repos.backend.execute(
+      `DELETE FROM sessions WHERE start_node_id IN (SELECT id FROM nodes WHERE tree_id = ?)`,
+      [treeId]
+    );
     await repos.trees.remove(treeId);
     // 切到剩余第一棵树（或新建默认树）
     const trees = await repos.trees.list();
@@ -911,7 +916,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         { name: "Markdown", extensions: ["md"] },
       ]);
       if (!file) return;
-      const root = await importMarkdownAsTree(repos, file.content);
+      // 确保有当前树：导入的节点必须归属某棵树（否则树状图不可见）
+      let treeId = get().currentTreeId;
+      if (!treeId) {
+        const first = (await repos.trees.list())[0];
+        treeId = first?.id ?? (await repos.trees.create("默认树")).id;
+        set({ currentTreeId: treeId });
+      }
+      const root = await importMarkdownAsTree(repos, file.content, treeId);
       if (root) {
         await get().navigateTo(root.id);
         useGraphStore.getState().bumpGraphVersion();

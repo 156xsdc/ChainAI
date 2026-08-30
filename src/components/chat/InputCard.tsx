@@ -65,9 +65,13 @@ export function InputCard() {
   }, [repos, currentNodeId]);
 
   const handleSend = () => {
-    if (!text.trim() || streaming || preparing) return;
-    sendMessage(text);
+    const trimmed = text.trim();
+    if (!trimmed || streaming || preparing) return;
+    // 先清空输入框；若消息未被受理（如未配置 AI 服务），恢复文字避免丢失
     setText("");
+    void sendMessage(trimmed).then((accepted) => {
+      if (!accepted) setText(trimmed);
+    });
     textareaRef.current?.focus();
   };
 

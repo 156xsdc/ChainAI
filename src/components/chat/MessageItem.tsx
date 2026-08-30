@@ -36,6 +36,8 @@ export const MessageItem = memo(function MessageItem({
   const [verInfo, setVerInfo] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
+    // 流式期间版本信息不参与渲染（箭头已隐藏），跳过查询避免每次增量都查库
+    if (isStreaming) return;
     let cancelled = false;
     if (!repos) return;
     void (async () => {
@@ -52,7 +54,7 @@ export const MessageItem = memo(function MessageItem({
     return () => {
       cancelled = true;
     };
-  }, [repos, item.nodeId, item.content]);
+  }, [repos, item.nodeId, item.content, isStreaming]);
 
   if (item.role === "user") {
     return (

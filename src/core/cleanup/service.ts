@@ -9,7 +9,7 @@
  * - 回收站过期项物理删除
  */
 import type { AppRepositories } from "../db";
-import { now } from "../db/util";
+import { chunkArr, now } from "../db/util";
 
 export interface CleanupResult {
   /** 清理的分支数 */
@@ -22,69 +22,103 @@ export interface CleanupResult {
 
 /**
  * 找出所有分支根（会话起点 + 无父根节点）
+ * 去重：若某根是另一根的后代，只保留最上层的根（内存父链上溯，避免 O(n²) 数据库查询）
  */
 export async function findBranchRoots(repos: AppRepositories): Promise<string[]> {
   const sessions = await repos.sessions.getAll();
-  const roots = new Set(sessions.map((s) => s.startNodeId).filter(Boolean) as string[]);
+  const roots = new Set(
+    sessions.map((s) => s.startNodeId).filter(Boolean) as string[]
+  );
 
   // 无父的根节点也视为分支根（孤儿树）
   const all = await repos.nodes.getAllActive();
+  const edges = await repos.nodes.getAllActiveEdges();
+  const parentsOf = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!parentsOf.has(e.childId)) parentsOf.set(e.childId, []);
+    parentsOf.get(e.childId)!.push(e.parentId);
+  }
   for (const n of all) {
-    const parents = await repos.nodes.getParents(n.id);
-    if (parents.length === 0) roots.add(n.id);
+    if ((parentsOf.get(n.id) ?? []).length === 0) roots.add(n.id);
   }
 
-  // 去重：若某根是另一根的后代，只保留最上层的根（避免重复清理）
   const rootList = [...roots];
+  const rootSet = new Set(rootList);
   const result: string[] = [];
+  const memo = new Map<string, boolean>(); // id → 是否有 root 祖先
+  const visiting = new Set<string>();
+
+  const hasRootAncestor = (id: string): boolean => {
+    if (memo.has(id)) return memo.get(id)!;
+    if (visiting.has(id)) return false; // 环路保护（异常数据）
+    visiting.add(id);
+    const parents = parentsOf.get(id) ?? [];
+    const found = parents.some(
+      (p) => rootSet.has(p) || hasRootAncestor(p)
+    );
+    visiting.delete(id);
+    memo.set(id, found);
+    return found;
+  };
+
   for (const r of rootList) {
-    let isDescendant = false;
-    for (const o of rootList) {
-      if (o === r) continue;
-      const desc = await repos.nodes.getDescendantIds(o);
-      if (desc.includes(r)) {
-        isDescendant = true;
-        break;
-      }
-    }
-    if (!isDescendant) result.push(r);
+    if (!hasRootAncestor(r)) result.push(r);
   }
   return result;
 }
 
 /**
  * 检查分支是否受保护（任一节点有收藏/保留/分组/便签）
+ * 批量 COUNT 查询，避免逐节点 N+1
  */
 export async function isBranchProtected(
   repos: AppRepositories,
   descendantIds: string[]
 ): Promise<boolean> {
-  for (const id of descendantIds) {
-    const node = await repos.nodes.getNode(id);
-    if (!node) continue;
-    if (node.isKept || node.isFavorited) return true;
-    const groups = await repos.groups.getGroupsOfNode(id);
-    if (groups.length > 0) return true;
-    const notes = await repos.notes.listByNode(id);
-    if (notes.length > 0) return true;
+  if (descendantIds.length === 0) return false;
+  // 分块（SQLite 变量上限 999）
+  for (const chunk of chunkArr(descendantIds, 300)) {
+    const placeholders = chunk.map(() => "?").join(",");
+    const kept = await repos.backend.select<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM nodes
+       WHERE id IN (${placeholders}) AND (is_kept = 1 OR is_favorited = 1)`,
+      chunk
+    );
+    if ((kept[0]?.c ?? 0) > 0) return true;
+    const groups = await repos.backend.select<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM node_group_members WHERE node_id IN (${placeholders})`,
+      chunk
+    );
+    if ((groups[0]?.c ?? 0) > 0) return true;
+    const notes = await repos.backend.select<{ c: number }>(
+      `SELECT COUNT(*) AS c FROM notes WHERE node_id IN (${placeholders})`,
+      chunk
+    );
+    if ((notes[0]?.c ?? 0) > 0) return true;
   }
   return false;
 }
 
 /**
  * 获取分支最后活跃时间（子树内最新 updated_at）
+ * 单条递归 CTE + MAX 查询
  */
 export async function getBranchLastActive(
   repos: AppRepositories,
   rootId: string
 ): Promise<string | null> {
-  const descendantIds = await repos.nodes.getDescendantIds(rootId);
-  let latest: string | null = null;
-  for (const id of descendantIds) {
-    const node = await repos.nodes.getNode(id);
-    if (node && (!latest || node.updatedAt > latest)) latest = node.updatedAt;
-  }
-  return latest;
+  const rows = await repos.backend.select<{ m: string | null }>(
+    `WITH RECURSIVE subtree(id) AS (
+       SELECT ?
+       UNION ALL
+       SELECT e.child_id FROM edges e JOIN subtree s ON e.parent_id = s.id
+     )
+     SELECT MAX(n.updated_at) AS m FROM nodes n
+     JOIN subtree s ON n.id = s.id
+     WHERE n.is_active = 1`,
+    [rootId]
+  );
+  return rows[0]?.m ?? null;
 }
 
 /**
@@ -111,13 +145,9 @@ export async function cleanupOnce(
       continue;
     }
 
-    // 软删除 + 回收站
-    for (const id of descendantIds) {
-      await repos.nodes.softDeleteNode(id);
-    }
-    for (const id of descendantIds) {
-      await repos.recycleBin.add(id);
-    }
+    // 软删除 + 回收站（批量）
+    await repos.nodes.softDeleteMany(descendantIds);
+    await repos.recycleBin.addMany(descendantIds);
     result.branches++;
     result.nodes += descendantIds.length;
   }

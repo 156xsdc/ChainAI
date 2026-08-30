@@ -42,6 +42,35 @@ describe("Markdown 解析", () => {
     expect(nodes).toHaveLength(2);
     expect(nodes[0].answer).toContain("列表项");
   });
+
+  it("代码围栏内的 # 不解析为标题", () => {
+    const md = [
+      "# 问题",
+      "",
+      "```js",
+      "// 注释",
+      "# 这不是标题",
+      "const x = 1;",
+      "```",
+      "",
+      "## 子问题",
+      "正文",
+    ].join("\n");
+    const nodes = parseMarkdownTree(md);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0].question).toBe("问题");
+    // 围栏内容完整保留在根节点回答中
+    expect(nodes[0].answer).toContain("# 这不是标题");
+    expect(nodes[0].answer).toContain("const x = 1;");
+    expect(nodes[1].question).toBe("子问题");
+  });
+
+  it("波浪线围栏（~~~）同样生效", () => {
+    const md = "# 问题\n\n~~~\n# 不是标题\n~~~\n\n## 子问题";
+    const nodes = parseMarkdownTree(md);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0].answer).toContain("# 不是标题");
+  });
 });
 
 describe("Markdown 导入导出", () => {
@@ -85,5 +114,24 @@ describe("Markdown 导入导出", () => {
 
   it("空内容返回 null", async () => {
     expect(await importMarkdownAsTree(repo, "   ")).toBeNull();
+  });
+
+  it("导入含代码围栏的文档：围栏内 # 不产生新节点", async () => {
+    const md = [
+      "# 问题",
+      "",
+      "```js",
+      "# 这不是标题",
+      "```",
+      "",
+      "## 子问题",
+      "正文",
+    ].join("\n");
+    const root = await importMarkdownAsTree(repo, md);
+    expect(root).not.toBeNull();
+    // 围栏内 # 未成为节点：根只有"子问题"一个子节点
+    const kids = await repo.nodes.getChildren(root!.id);
+    expect(kids.map((k) => k.question)).toEqual(["子问题"]);
+    expect(kids[0].answer).toContain("正文");
   });
 });

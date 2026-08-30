@@ -2,7 +2,8 @@
  * Markdown 导入导出（可读文档）
  *
  * 导出：标题层级 = 树深度（# 根 → ## 子分支 → ### 孙...）
- * 导入：解析标题层级重建树结构（标题=用户问题，正文=AI回答）
+ * 导入：解析标题层级重建树（标题=用户问题，正文=AI回答）
+ * 注意：解析时识别 ``` / ~~~ 代码围栏，围栏内的 # 行不当作标题
  */
 import type { AppRepositories, TreeNode } from "../db";
 
@@ -54,13 +55,31 @@ export interface ParsedMarkdownNode {
   level: number;
 }
 
-/** 解析 Markdown 为标题层级结构 */
+/** 解析 Markdown 为标题层级结构（识别代码围栏，围栏内 # 不作标题） */
 export function parseMarkdownTree(text: string): ParsedMarkdownNode[] {
   const lines = text.split(/\r?\n/);
   const result: ParsedMarkdownNode[] = [];
   let current: ParsedMarkdownNode | null = null;
+  // 代码围栏状态（``` 或 ~~~）：围栏内的 # 不解析为标题
+  let fence: { char: string; len: number } | null = null;
 
   for (const raw of lines) {
+    // 围栏内：先检查闭合（同字符且长度 >= 开栏长度），其余行全部作为内容
+    if (fence) {
+      const closeRe = new RegExp(
+        `^\\s*${fence.char === "`" ? "`" : "~"}{${fence.len},}\\s*$`
+      );
+      if (closeRe.test(raw)) fence = null;
+      if (current) current.answer += (current.answer ? "\n" : "") + raw;
+      continue;
+    }
+    // 围栏开启：行首 ``` 或 ~~~（可带信息串，如 ```js）
+    const fm = /^\s*(`{3,}|~{3,})[^\s`~]*\s*$/.exec(raw);
+    if (fm) {
+      fence = { char: fm[1][0], len: fm[1].length };
+      if (current) current.answer += (current.answer ? "\n" : "") + raw;
+      continue;
+    }
     const m = /^(#{1,6})\s+(.+)$/.exec(raw);
     if (m) {
       current = {
@@ -81,11 +100,13 @@ export function parseMarkdownTree(text: string): ParsedMarkdownNode[] {
 
 /**
  * 导入 Markdown：按标题层级重建树（追加到现有数据，不覆盖）
+ * @param treeId 归属的树（必传！否则节点 tree_id 为 NULL，树状图不可见）
  * @returns 新建的根节点
  */
 export async function importMarkdownAsTree(
   repos: AppRepositories,
-  text: string
+  text: string,
+  treeId?: string | null
 ): Promise<TreeNode | null> {
   const parsed = parseMarkdownTree(text);
   if (parsed.length === 0) return null;
@@ -98,7 +119,7 @@ export async function importMarkdownAsTree(
     let node: TreeNode;
     if (stack.length === 0) {
       // 第一个标题 = 根
-      node = await repos.nodes.createNode({ question: item.question });
+      node = await repos.nodes.createNode({ question: item.question, treeId });
       root = node;
     } else {
       // 弹栈到父层级：父 = level 严格小于当前 level 的最近栈项
@@ -110,11 +131,14 @@ export async function importMarkdownAsTree(
       }
       const parent = stack[stack.length - 1];
       if (parent) {
-        const created = await repos.nodes.createNode({ question: item.question });
+        const created = await repos.nodes.createNode({
+          question: item.question,
+          treeId,
+        });
         await repos.nodes.addEdge(parent.nodeId, created.id, "inherit");
         node = created;
       } else {
-        node = await repos.nodes.createNode({ question: item.question });
+        node = await repos.nodes.createNode({ question: item.question, treeId });
         if (!root) root = node;
       }
     }

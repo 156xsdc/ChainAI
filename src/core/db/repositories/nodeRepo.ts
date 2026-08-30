@@ -323,4 +323,16 @@ export class NodeRepository {
     );
     return rows.map(rowToNode);
   }
+
+  /** 全部活跃节点之间的边（树状图全局视图用） */
+  async getAllActiveEdges(): Promise<TreeEdge[]> {
+    const rows = await this.db.select<import("../types").EdgeRow>(
+      `SELECT DISTINCT e.* FROM edges e
+       JOIN nodes p ON p.id = e.parent_id
+       JOIN nodes c ON c.id = e.child_id
+       WHERE p.is_active = 1 AND c.is_active = 1
+       ORDER BY e.created_at ASC, e.rowid ASC`
+    );
+    return rows.map(rowToEdge);
+  }
 }

@@ -120,6 +120,17 @@ body {
   margin: 1em 0;
 }
 
+/* React Flow 节点拖拽反馈 */
+.react-flow__node.dragging {
+  opacity: 0.75;
+}
+.react-flow__node.selectable {
+  cursor: grab;
+}
+.react-flow__node.selectable:active {
+  cursor: grabbing;
+}
+
 /* 极简滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

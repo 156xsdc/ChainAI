@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "chainai",
+        "title": "ChainAI - 树状对话",
         "width": 800,
         "height": 600
       }

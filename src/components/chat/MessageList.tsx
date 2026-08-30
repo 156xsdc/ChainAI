@@ -7,13 +7,16 @@ import { useChatStore } from "../../store/chatStore";
 import { MessageItem } from "./MessageItem";
 import { BranchDivider } from "./BranchDivider";
 import { ContextMenu } from "./ContextMenu";
+import { Modal } from "../common/Modal";
 
 export function MessageList() {
   const path = useChatStore((s) => s.path);
   const streaming = useChatStore((s) => s.streaming);
   const streamingBuffer = useChatStore((s) => s.streamingBuffer);
+  const repos = useChatStore((s) => s.repos);
   const navigateTo = useChatStore((s) => s.navigateTo);
   const createBranch = useChatStore((s) => s.createBranch);
+  const deleteBranch = useChatStore((s) => s.deleteBranch);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{
@@ -21,6 +24,33 @@ export function MessageList() {
     y: number;
     nodeId: string;
   } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    nodeId: string;
+    label: string;
+    nodeCount: number;
+    protectedCount: number;
+    busy: boolean;
+  } | null>(null);
+
+  /** 打开删除确认：统计子树节点数与受保护节点数 */
+  const openDeleteConfirm = async (nodeId: string, label: string) => {
+    if (!repos) return;
+    const descendants = await repos.nodes.getDescendantIds(nodeId);
+    let protectedCount = 0;
+    for (const id of descendants) {
+      const n = await repos.nodes.getNode(id);
+      if (n && (n.isKept || n.isFavorited)) protectedCount++;
+      const notes = await repos.notes.listByNode(id);
+      if (notes.length > 0) protectedCount++;
+    }
+    setDeleteConfirm({
+      nodeId,
+      label,
+      nodeCount: descendants.length,
+      protectedCount,
+      busy: false,
+    });
+  };
 
   // 消息变化 / 流式输出时滚动到底部
   useEffect(() => {
@@ -41,7 +71,7 @@ export function MessageList() {
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto"
+      className="min-h-0 flex-1 overflow-y-auto"
       onClick={() => setMenu(null)}
       onContextMenu={(e) => {
         // 空白处右键：关闭菜单
@@ -79,6 +109,7 @@ export function MessageList() {
                 createBranch(parentId, {});
                 setMenu(null);
               }}
+              onDeleteBranch={(nodeId, label) => void openDeleteConfirm(nodeId, label)}
             />
           );
         })}
@@ -92,6 +123,54 @@ export function MessageList() {
           onClose={() => setMenu(null)}
         />
       )}
+
+      {/* 删除分支确认 */}
+      <Modal
+        open={deleteConfirm !== null}
+        title="删除分支"
+        onClose={() => setDeleteConfirm(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl bg-neutral-50 px-3.5 py-3 text-xs leading-relaxed text-neutral-600">
+            确定删除分支 <b>「{deleteConfirm?.label}」</b> 吗？
+            <br />
+            将删除该分支及其下全部对话（
+            <b>{deleteConfirm?.nodeCount}</b> 个节点），移入回收站。
+          </div>
+          {deleteConfirm && deleteConfirm.protectedCount > 0 && (
+            <div className="rounded-xl bg-amber-50/70 px-3.5 py-2.5 text-[11px] leading-relaxed text-amber-700">
+              ⚠️ 该分支包含 <b>{deleteConfirm.protectedCount}</b> 个受保护节点
+              （⭐收藏 / 📌保留 / 📝便签关联）。
+              <br />
+              如需删除，请先取消这些节点的保护标记。
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setDeleteConfirm(null)}
+              className="rounded-xl px-4 py-2 text-xs text-neutral-500 hover:bg-neutral-100"
+            >
+              取消
+            </button>
+            <button
+              disabled={
+                !deleteConfirm ||
+                deleteConfirm.busy ||
+                deleteConfirm.protectedCount > 0
+              }
+              onClick={async () => {
+                if (!deleteConfirm) return;
+                setDeleteConfirm({ ...deleteConfirm, busy: true });
+                await deleteBranch(deleteConfirm.nodeId);
+                setDeleteConfirm(null);
+              }}
+              className="rounded-xl bg-red-600 px-4 py-2 text-xs text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400"
+            >
+              确认删除
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

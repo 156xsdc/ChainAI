@@ -1,0 +1,142 @@
+import { describe, it, expect } from "vitest";
+import { computeGitLayout } from "../layout";
+import type { TreeEdge, TreeNode } from "../../db/types";
+
+function node(id: string, createdAt = "2026-01-01T00:00:00.000Z"): TreeNode {
+  return {
+    id,
+    question: `Q${id}`,
+    answer: "",
+    type: "normal",
+    summary: "",
+    color: "#333333",
+    isKept: false,
+    isFavorited: false,
+    isActive: true,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function edge(parentId: string, childId: string, relationType: "inherit" | "non_inherit" = "inherit"): TreeEdge {
+  return {
+    id: `${parentId}-${childId}`,
+    parentId,
+    childId,
+    relationType,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+describe("computeGitLayout", () => {
+  it("线性链：同一轨道，父在上子在下", () => {
+    const nodes = [node("r", "t0"), node("a", "t1"), node("b", "t2")];
+    const edges = [edge("r", "a"), edge("a", "b")];
+    const { positions } = computeGitLayout(nodes, edges);
+
+    const r = positions.get("r")!;
+    const a = positions.get("a")!;
+    const b = positions.get("b")!;
+    expect(r.lane).toBe(a.lane);
+    expect(a.lane).toBe(b.lane);
+    expect(r.row).toBeLessThan(a.row);
+    expect(a.row).toBeLessThan(b.row);
+  });
+
+  it("分叉：子节点开新轨道", () => {
+    const nodes = [node("r", "t0"), node("a1", "t1"), node("a2", "t2")];
+    const edges = [edge("r", "a1"), edge("r", "a2")];
+    const { positions } = computeGitLayout(nodes, edges);
+
+    const r = positions.get("r")!;
+    const a1 = positions.get("a1")!;
+    const a2 = positions.get("a2")!;
+    expect(a1.lane).toBe(r.lane); // 第一个子继承父轨道
+    expect(a2.lane).not.toBe(a1.lane); // 第二个子新开轨道
+    expect(a1.row).toBe(a2.row); // 同层
+  });
+
+  it("合并：两条轨道汇聚到合并节点", () => {
+    const nodes = [
+      node("a", "t0"),
+      node("b", "t1"),
+      node("m", "t2"),
+    ];
+    const edges = [edge("a", "m"), edge("b", "m")];
+    const { positions } = computeGitLayout(nodes, edges);
+
+    const a = positions.get("a")!;
+    const b = positions.get("b")!;
+    const m = positions.get("m")!;
+    expect(a.lane).not.toBe(b.lane);
+    expect(m.row).toBeGreaterThan(a.row);
+    expect(m.row).toBeGreaterThan(b.row);
+  });
+
+  it("全树：分叉+继续+合并，无重叠且顺序正确", () => {
+    // 根 → A → A1 → A2
+    // 根 → B → B1
+    // A2 与 B1 合并 → M
+    const nodes = [
+      node("root", "t0"),
+      node("A", "t1"),
+      node("B", "t2"),
+      node("A1", "t3"),
+      node("B1", "t4"),
+      node("A2", "t5"),
+      node("M", "t6"),
+    ];
+    const edges = [
+      edge("root", "A"),
+      edge("root", "B"),
+      edge("A", "A1"),
+      edge("B", "B1"),
+      edge("A1", "A2"),
+      edge("A2", "M"),
+      edge("B1", "M"),
+    ];
+    const { positions } = computeGitLayout(nodes, edges);
+
+    // 每个节点都有位置
+    for (const n of nodes) {
+      expect(positions.get(n.id)).toBeDefined();
+    }
+
+    // 父行 < 子行
+    const row = (id: string) => positions.get(id)!.row;
+    expect(row("root")).toBeLessThan(row("A"));
+    expect(row("A")).toBeLessThan(row("A1"));
+    expect(row("A1")).toBeLessThan(row("A2"));
+    expect(row("B")).toBeLessThan(row("B1"));
+    expect(row("A2")).toBeLessThan(row("M"));
+
+    // A 链和 B 链不同轨道
+    expect(positions.get("A")!.lane).not.toBe(positions.get("B")!.lane);
+
+    // 同层节点不重叠（同层不同 lane 或不同 row）
+    const seen = new Map<string, Set<number>>();
+    for (const n of nodes) {
+      const p = positions.get(n.id)!;
+      const s = seen.get(`${p.row}`) ?? new Set<number>();
+      expect(s.has(p.lane)).toBe(false); // 同一行同一轨道不重复
+      s.add(p.lane);
+      seen.set(`${p.row}`, s);
+    }
+  });
+
+  it("多个根节点：各自占轨道", () => {
+    const nodes = [node("r1", "t0"), node("r2", "t1")];
+    const edges: TreeEdge[] = [];
+    const { positions } = computeGitLayout(nodes, edges);
+    expect(positions.get("r1")!.lane).not.toBe(positions.get("r2")!.lane);
+  });
+
+  it("新开始节点（虚线边）也参与布局", () => {
+    const nodes = [node("r", "t0"), node("ns", "t1"), node("ns1", "t2")];
+    const edges = [edge("r", "ns", "non_inherit"), edge("ns", "ns1")];
+    const { positions } = computeGitLayout(nodes, edges);
+    expect(positions.get("ns")).toBeDefined();
+    expect(positions.get("ns")!.row).toBeGreaterThan(positions.get("r")!.row);
+    expect(positions.get("ns1")!.row).toBeGreaterThan(positions.get("ns")!.row);
+  });
+});

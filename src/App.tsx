@@ -9,6 +9,8 @@ import { ChatArea } from "./components/chat/ChatArea";
 import { Rail } from "./components/layout/Rail";
 import { LeftSidebar } from "./components/layout/LeftSidebar";
 import { RightSidebar } from "./components/layout/RightSidebar";
+import { GraphPanel } from "./components/graph/GraphPanel";
+import { GraphFullscreen } from "./components/graph/GraphFullscreen";
 
 export default function App() {
   const init = useChatStore((s) => s.init);
@@ -17,6 +19,8 @@ export default function App() {
   const clearError = useChatStore((s) => s.clearError);
   const leftExpanded = useUIStore((s) => s.leftExpanded);
   const rightExpanded = useUIStore((s) => s.rightExpanded);
+  const graphOpen = useUIStore((s) => s.graphOpen);
+  const graphFullscreen = useUIStore((s) => s.graphFullscreen);
 
   useEffect(() => {
     init();
@@ -26,7 +30,15 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const ui = useUIStore.getState();
-      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "b") {
+      if (e.key === "Escape") {
+        if (ui.graphFullscreen) {
+          e.preventDefault();
+          ui.setGraphFullscreen(false);
+        }
+      } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        ui.setGraphFullscreen(!ui.graphFullscreen);
+      } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "b") {
         e.preventDefault();
         ui.toggleSidebar("left");
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
@@ -60,10 +72,14 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-[#f5f5f5] text-neutral-800">
       {leftExpanded ? <LeftSidebar /> : <Rail side="left" />}
-      <main className="flex min-w-0 flex-1 flex-col">
+      {graphOpen && !graphFullscreen && <GraphPanel />}
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatArea />
       </main>
       {rightExpanded ? <RightSidebar /> : <Rail side="right" />}
+
+      {/* 树状图全屏 */}
+      <GraphFullscreen />
 
       {/* 左下角软提醒 */}
       {uiError && <ErrorToast message={uiError} onClose={clearError} />}

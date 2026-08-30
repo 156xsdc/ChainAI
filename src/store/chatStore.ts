@@ -8,6 +8,9 @@ import { create } from "zustand";
 import { providerManager } from "../core/ai/manager";
 import { ChatError } from "../core/ai/errors";
 import type { ChatMessage } from "../core/ai/types";
+import { Typewriter } from "../core/typing/typewriter";
+import { buildContext, type ContextMessage } from "../core/context/builder";
+import { summarizeGroup } from "../core/context/aiCompressor";
 import { TreeService } from "../core/tree/treeService";
 import {
   initAppDatabase,
@@ -50,6 +53,8 @@ interface ChatState {
   path: ChatStreamItem[];
 
   streaming: boolean;
+  /** 是否正在准备上下文（AI 压缩摘要等） */
+  preparing: boolean;
   /** nodeId -> 流式生成的 AI 回答（覆盖 DB 中的 answer） */
   streamingBuffer: Record<string, string>;
   /** 当前是否有父节点（↑上级按钮可用性） */
@@ -62,8 +67,15 @@ interface ChatState {
   sendMessage: (text: string) => Promise<void>;
   createBranch: (parentNodeId: string, params?: CreateBranchParams) => Promise<string>;
   createNewStart: (parentNodeId: string) => Promise<string>;
+  createMerge: (
+    parentNodeIds: string[],
+    params?: { name?: string; inheritCount?: number }
+  ) => Promise<string>;
   toggleFavorite: (nodeId: string) => Promise<void>;
+  /** 删除分支（该节点及其全部后代）：软删除 + 回收站 + 导航调整 */
+  deleteBranch: (nodeId: string) => Promise<{ deletedCount: number }>;
   stopStreaming: () => void;
+  setUiError: (msg: string) => void;
   clearError: () => void;
 }
 
@@ -77,6 +89,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentNodeId: null,
   path: [],
   streaming: false,
+  preparing: false,
   streamingBuffer: {},
   hasParent: false,
 
@@ -226,17 +239,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     await repos.settings.set("chat.currentNodeId", nodeId);
 
-    // 构建上下文（根 → 当前节点）
-    const ctx = await treeService.getContextPath(nodeId);
-    const messages: ChatMessage[] = ctx.map((m) => ({
+    // 构建上下文：继承模式 + 时间权重压缩
+    set({ preparing: true });
+    const session = await repos.sessions.getByStartNode(nodeId);
+    const inheritCount = session?.inheritCount ?? 10; // -1=全部, 0=不继承
+    const inheritMode =
+      inheritCount < 0 ? "all" : inheritCount === 0 ? "none" : "count";
+    const compressSettings = await repos.settings.get<{
+      enabled?: boolean;
+      recentKeep?: number;
+    }>("ai.contextCompression", { enabled: true, recentKeep: 5 });
+
+    const fullCtx = await treeService.getContextPath(nodeId);
+    const contextMessages: ContextMessage[] = fullCtx.map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
+    // 压缩摘要需要额外的 AI 调用（历史较长时）
+    const messages: ChatMessage[] = await buildContext(contextMessages, {
+      inheritMode,
+      inheritCount,
+      compress: compressSettings.enabled,
+      recentKeep: compressSettings.recentKeep ?? 5,
+      compressFn: (group) => summarizeGroup(group, config),
+    });
+
+    // 打字机设置（render.typewriter）
+    const twSettings = await repos.settings.get<{
+      enabled?: boolean;
+      threshold?: number;
+      speed?: number;
+    }>("render.typewriter", { enabled: true, threshold: 200, speed: 30 });
+
     // 流式调用
     const controller = new AbortController();
     streamController = controller;
-    set({ streaming: true });
+    set({ preparing: false, streaming: true });
+
+    const updateBuffer = (text: string) =>
+      set((s) => ({
+        streamingBuffer: { ...s.streamingBuffer, [nodeId]: text },
+      }));
+
+    const typewriter =
+      twSettings.enabled === false
+        ? null
+        : new Typewriter(updateBuffer, {
+            threshold: twSettings.threshold ?? 200,
+            charsPerSecond: twSettings.speed ?? 30,
+          });
+
     let answer = "";
     try {
       for await (const chunk of providerManager.chat({
@@ -245,9 +298,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })) {
         if (chunk.delta) {
           answer += chunk.delta;
-          set((s) => ({
-            streamingBuffer: { ...s.streamingBuffer, [nodeId]: answer },
-          }));
+          if (typewriter) typewriter.feed(chunk.delta);
+          else updateBuffer(answer);
         }
       }
     } catch (err) {
@@ -257,8 +309,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } finally {
       streamController = null;
-      if (answer) {
-        await repos.nodes.updateNode(nodeId, { answer });
+      set({ preparing: false });
+      if (typewriter) typewriter.finish();
+      const finalAnswer = typewriter ? typewriter.fullText : answer;
+      if (finalAnswer) {
+        await repos.nodes.updateNode(nodeId, { answer: finalAnswer });
         set((s) => {
           const buffer = { ...s.streamingBuffer };
           delete buffer[nodeId];
@@ -286,6 +341,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return node.id;
   },
 
+  createMerge: async (parentNodeIds, params) => {
+    const { treeService } = get();
+    if (!treeService) return "";
+    const { node } = await treeService.createMerge(parentNodeIds, params);
+    await get().navigateTo(node.id);
+    return node.id;
+  },
+
   toggleFavorite: async (nodeId) => {
     const { repos } = get();
     if (!repos) return;
@@ -301,9 +364,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await get().refreshPath();
   },
 
+  deleteBranch: async (nodeId) => {
+    const { repos, currentNodeId } = get();
+    if (!repos) return { deletedCount: 0 };
+
+    const descendants = await repos.nodes.getDescendantIds(nodeId);
+    // 软删除全部子树节点
+    for (const id of descendants) {
+      await repos.nodes.softDeleteNode(id);
+    }
+    // 回收站记录
+    for (const id of descendants) {
+      await repos.recycleBin.add(id);
+    }
+
+    // 若当前节点在删除的子树上 → 跳转到该分支的父节点
+    if (currentNodeId && descendants.includes(currentNodeId)) {
+      const parents = await repos.nodes.getParents(nodeId);
+      if (parents.length > 0) {
+        await get().navigateTo(parents[0].id);
+      } else {
+        set({ currentNodeId: null });
+        await repos.settings.set("chat.currentNodeId", null);
+        await get().refreshPath();
+      }
+    } else {
+      await get().refreshPath();
+    }
+    return { deletedCount: descendants.length };
+  },
+
   stopStreaming: () => {
     streamController?.abort();
   },
 
+  setUiError: (msg) => set({ uiError: msg }),
   clearError: () => set({ uiError: null, initError: null }),
 }));

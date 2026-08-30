@@ -7,10 +7,13 @@ import { Bookmark, ChevronsLeft, Settings, Star, TreePine } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
 import { SettingsDialog } from "../modals/SettingsDialog";
+import { TreeThumbnail } from "../graph/TreeThumbnail";
 import type { TreeNode } from "../../core/db";
 
 export function LeftSidebar() {
   const setSidebar = useUIStore((s) => s.setSidebar);
+  const setGraphOpen = useUIStore((s) => s.setGraphOpen);
+  const graphOpen = useUIStore((s) => s.graphOpen);
   const repos = useChatStore((s) => s.repos);
   const navigateTo = useChatStore((s) => s.navigateTo);
   const [favorites, setFavorites] = useState<TreeNode[]>([]);
@@ -35,16 +38,22 @@ export function LeftSidebar() {
 
   return (
     <aside className="flex w-[250px] shrink-0 flex-col border-r border-neutral-200 bg-white">
-      {/* 树状图缩略图区 */}
+      {/* 树状图缩略图区：实时预览 + 点击在聊天区左侧展开 */}
       <div className="flex min-h-0 flex-[3] flex-col border-b border-neutral-100 p-3">
         <div className="mb-2 flex items-center gap-1.5 text-[11px] text-neutral-400">
           <TreePine size={12} /> 树状图
+          <span className="ml-auto text-[9px] text-neutral-300">
+            {graphOpen ? "已展开" : "点击预览展开"}
+          </span>
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 text-center text-[11px] text-neutral-300">
-          <TreePine size={22} strokeWidth={1} className="mb-2 text-neutral-200" />
-          树状图缩略图
-          <br />
-          （下一阶段接入）
+        <div
+          className={`min-h-0 flex-1 overflow-hidden rounded-xl border ${
+            graphOpen
+              ? "border-neutral-400 bg-neutral-50"
+              : "border-neutral-200 bg-neutral-50/60"
+          }`}
+        >
+          <TreeThumbnail onClick={() => setGraphOpen(true)} />
         </div>
       </div>
 

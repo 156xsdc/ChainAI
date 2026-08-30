@@ -19,6 +19,7 @@ import { SettingsDialog } from "../modals/SettingsDialog";
 export function InputCard() {
   const currentNodeId = useChatStore((s) => s.currentNodeId);
   const streaming = useChatStore((s) => s.streaming);
+  const preparing = useChatStore((s) => s.preparing);
   const hasParent = useChatStore((s) => s.hasParent);
   const repos = useChatStore((s) => s.repos);
   const sendMessage = useChatStore((s) => s.sendMessage);
@@ -54,7 +55,7 @@ export function InputCard() {
   }, [repos, currentNodeId, streaming]);
 
   const handleSend = () => {
-    if (!text.trim() || streaming) return;
+    if (!text.trim() || streaming || preparing) return;
     sendMessage(text);
     setText("");
     textareaRef.current?.focus();
@@ -159,7 +160,11 @@ export function InputCard() {
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                streaming ? "AI 正在生成..." : "输入消息...（Enter 发送，Shift+Enter 换行）"
+                preparing
+                  ? "正在压缩上下文..."
+                  : streaming
+                    ? "AI 正在生成..."
+                    : "输入消息...（Enter 发送，Shift+Enter 换行）"
               }
               rows={1}
               className="max-h-40 min-h-[38px] flex-1 resize-none bg-transparent py-2 text-[13.5px] leading-relaxed text-neutral-800 outline-none placeholder:text-neutral-300"

@@ -12,6 +12,7 @@ import { FavoriteRepository } from "./repositories/favoriteRepo";
 import { GroupRepository } from "./repositories/groupRepo";
 import { NoteRepository } from "./repositories/noteRepo";
 import { SettingsRepository } from "./repositories/settingsRepo";
+import { RecycleBinRepository } from "./repositories/recycleBinRepo";
 
 export { TauriSqlBackend, withTransaction, type SqlBackend } from "./backend";
 export * from "./types";
@@ -21,6 +22,7 @@ export * from "./repositories/favoriteRepo";
 export * from "./repositories/groupRepo";
 export * from "./repositories/noteRepo";
 export * from "./repositories/settingsRepo";
+export * from "./repositories/recycleBinRepo";
 
 /** 应用数据仓库集合 */
 export interface AppRepositories {
@@ -31,6 +33,7 @@ export interface AppRepositories {
   groups: GroupRepository;
   notes: NoteRepository;
   settings: SettingsRepository;
+  recycleBin: RecycleBinRepository;
 }
 
 /** 对任意 backend 执行建表 */
@@ -50,6 +53,7 @@ export function createRepositories(db: SqlBackend): AppRepositories {
     groups: new GroupRepository(db),
     notes: new NoteRepository(db),
     settings: new SettingsRepository(db),
+    recycleBin: new RecycleBinRepository(db),
   };
 }
 

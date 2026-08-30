@@ -32,9 +32,9 @@ function hexToRgba(color: string, alpha: number): string {
 export function GroupWidget({ data }: NodeProps<GroupFlowNode>) {
   const { group, memberCount, collapsed, onToggle, onContextMenu } = data;
   const color = group.color || "#dcdcdc";
-  // 展开：淡色底（12%透明度，轻但有区分度）；折叠：稍深（28%）
-  const openBg = hexToRgba(color, 0.12);
-  const foldBg = hexToRgba(color, 0.28);
+  // 展开：淡色底（20%透明度，有辨识度）；折叠：更深（35%）
+  const openBg = hexToRgba(color, 0.2);
+  const foldBg = hexToRgba(color, 0.35);
 
   return (
     <div

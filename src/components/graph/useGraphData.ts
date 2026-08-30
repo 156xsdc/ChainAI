@@ -40,10 +40,10 @@ export function useGraphData(): GraphData | null {
           : Promise.resolve([]),
       ]);
       if (cancelled) return;
-      // 圆点节点布局更紧凑
+      // 轻量圆点布局
       const layout = computeGitLayout(nodes, edges, {
-        laneWidth: 90,
-        rowHeight: 56,
+        laneWidth: 84,
+        rowHeight: 52,
       });
       // 加载节点分组（虚线框）
       const groupRows = await repos.groups.listGroups();

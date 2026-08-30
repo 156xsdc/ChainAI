@@ -1,8 +1,8 @@
 /**
- * 树状图自定义节点：Git 提交图风格的圆点
- * - 平时只显示圆点，悬停显示用户问题（tooltip）
- * - 类型区分：普通(灰) / 新开始(棕+✦) / 合并(紫+◉)
- * - 当前节点：深色 + 外环高亮；当前路径：深灰
+ * 树状图自定义节点：轻量圆点（与缩略图一致的表现形式）
+ * - 平时只显示淡灰小点，悬停显示用户问题（tooltip）
+ * - 当前节点：深色 + 细白描边；当前路径：灰白描边
+ * - 新开始(淡棕) / 合并(淡紫) 微色区分，保持轻
  */
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { TreeNode } from "../../core/db";
@@ -16,21 +16,20 @@ export interface TreeNodeWidgetData {
 
 export type TreeNodeFlowNode = Node<TreeNodeWidgetData>;
 
-/** 圆点尺寸：为 Handle 留出上下空间 */
-export const NODE_W = 30;
-export const NODE_H = 34;
+export const NODE_W = 26;
+export const NODE_H = 30;
 
 export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
   const { node, isCurrent, isOnPath } = data;
 
   const baseColor =
     node.type === "new_start"
-      ? "#b45309"
+      ? "#c98d5a" // 淡棕
       : node.type === "merge"
-        ? "#5b5bd6"
-        : "#a8a8a8";
-  const dotColor = isCurrent ? "#1a1a1a" : isOnPath ? "#525252" : baseColor;
-  const dotSize = isCurrent ? 15 : isOnPath ? 13 : 10;
+        ? "#8d8dd6" // 淡紫
+        : "#cfcfcf"; // 淡灰
+  const dotColor = isCurrent ? "#1a1a1a" : isOnPath ? "#9a9a9a" : baseColor;
+  const dotSize = isCurrent ? 11 : isOnPath ? 9.5 : 8;
 
   return (
     <div className="group relative flex h-full w-full cursor-grab items-center justify-center active:cursor-grabbing">
@@ -42,7 +41,7 @@ export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
           height: dotSize,
           background: dotColor,
           boxShadow: isCurrent
-            ? "0 0 0 2px #ffffff, 0 0 0 4px #1a1a1a"
+            ? "0 0 0 1.5px #ffffff, 0 0 0 3px rgba(26,26,26,0.25)"
             : isOnPath
               ? "0 0 0 1px #ffffff"
               : undefined,
@@ -72,8 +71,8 @@ export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
         )}
       </div>
 
-      <Handle type="target" position={Position.Top} className="!h-1 !w-1 !border-0 !bg-transparent" />
-      <Handle type="source" position={Position.Bottom} className="!h-1 !w-1 !border-0 !bg-transparent" />
+      <Handle type="target" position={Position.Top} className="!h-0.5 !w-0.5 !border-0 !bg-transparent" />
+      <Handle type="source" position={Position.Bottom} className="!h-0.5 !w-0.5 !border-0 !bg-transparent" />
     </div>
   );
 }

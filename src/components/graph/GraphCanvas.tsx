@@ -346,8 +346,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         type: "straight",
         style:
           e.relationType === "non_inherit"
-            ? { stroke: "#c9c9c9", strokeDasharray: "5 4", strokeWidth: 1.2 }
-            : { stroke: "#9a9a9a", strokeWidth: 1.2 },
+            ? { stroke: "#dedede", strokeDasharray: "4 3", strokeWidth: 1 }
+            : { stroke: "#c8c8c8", strokeWidth: 1 },
       }));
   }, [data, collapsedIds]);
 

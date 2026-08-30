@@ -1,6 +1,7 @@
 /**
- * 节点分组：虚线框包围 + 分组名 + 折叠/展开
- * 点击分组框切换折叠；右键打开分组菜单
+ * 节点分组：细虚线半透明框（轻量）
+ * - 展开：组名/总结默认隐藏，hover 悬浮显示
+ * - 折叠：半透明灰底 + 组名常驻（+数量）
  */
 import { type Node, type NodeProps } from "@xyflow/react";
 import type { NodeGroup } from "../../core/db";
@@ -21,10 +22,12 @@ export function GroupWidget({ data }: NodeProps<GroupFlowNode>) {
 
   return (
     <div
-      className={`absolute inset-0 rounded-xl border-2 border-dashed transition-colors ${
-        collapsed ? "bg-neutral-100/70" : "bg-neutral-50/25 hover:bg-neutral-50/50"
+      className={`group absolute inset-0 rounded-lg border border-dashed transition-colors ${
+        collapsed
+          ? "bg-neutral-200/35 hover:bg-neutral-200/50"
+          : "border-neutral-200/80 bg-transparent hover:bg-neutral-100/25 hover:border-neutral-300"
       }`}
-      style={{ borderColor: group.color || "#9a9a9a" }}
+      style={{ borderColor: collapsed ? "#d0d0d0" : "#dcdcdc" }}
       onClick={(e) => {
         e.stopPropagation();
         onToggle(group.id);
@@ -36,15 +39,18 @@ export function GroupWidget({ data }: NodeProps<GroupFlowNode>) {
       }}
       title={collapsed ? "点击展开分组" : "点击折叠分组"}
     >
+      {/* 组名：折叠常驻，展开 hover 悬浮显示 */}
       <span
-        className="pointer-events-none absolute left-3 top-1.5 flex items-center gap-1 text-[10px] font-medium"
-        style={{ color: group.color || "#666" }}
+        className={`pointer-events-none absolute left-2 top-1 max-w-[calc(100%-16px)] truncate text-[9px] font-medium text-neutral-400 ${
+          collapsed ? "" : "opacity-0 transition-opacity group-hover:opacity-100"
+        }`}
       >
-        {collapsed ? "▸" : "▾"} {group.name || "未命名分组"}
-        {collapsed && <span className="text-neutral-400">({memberCount})</span>}
+        {collapsed ? `▸ ${group.name || "未命名分组"} (${memberCount})` : group.name || "未命名分组"}
       </span>
-      {collapsed && group.summary && (
-        <span className="pointer-events-none absolute left-3 right-3 top-7 line-clamp-3 text-[9px] leading-4 text-neutral-400">
+
+      {/* 总结：hover 悬浮显示 */}
+      {group.summary && (
+        <span className="pointer-events-none absolute left-2 right-2 top-6 line-clamp-3 text-[9px] leading-4 text-neutral-400 opacity-0 transition-opacity group-hover:opacity-100">
           {group.summary}
         </span>
       )}

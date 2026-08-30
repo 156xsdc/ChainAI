@@ -56,3 +56,26 @@ export function collectDirPaths(tree: DirNode[]): string[] {
   walk(tree);
   return paths;
 }
+
+/**
+ * 从目录路径列表构建树结构（noteCount 恒为 0，由调用方按便签统计填充）
+ * 用于持久化目录（directories 表）——空目录也能显示
+ */
+export function buildTreeFromPaths(paths: string[]): DirNode[] {
+  const root: DirNode = { name: "", path: "", children: [], noteCount: 0 };
+  for (const p of paths) {
+    const parts = (p || "").split(/[\\/]/).map((s) => s.trim()).filter(Boolean);
+    let node = root;
+    let cur = "";
+    for (const part of parts) {
+      cur = cur ? `${cur}/${part}` : part;
+      let child = node.children.find((c) => c.name === part);
+      if (!child) {
+        child = { name: part, path: cur, children: [], noteCount: 0 };
+        node.children.push(child);
+      }
+      node = child;
+    }
+  }
+  return root.children;
+}

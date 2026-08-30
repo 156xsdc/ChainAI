@@ -22,7 +22,7 @@ import {
   readNoteContent,
   writeNoteContent,
 } from "../../core/notes/noteService";
-import { buildDirTree, type DirNode } from "../../core/notes/dirTree";
+import { buildTreeFromPaths, type DirNode } from "../../core/notes/dirTree";
 import type { Note } from "../../core/db";
 
 const MIN_W = 220;
@@ -106,11 +106,31 @@ export function RightSidebar() {
     setContent(await readNoteContent(repos!, note));
   };
 
-  // 目录树
-  const dirTree = useMemo(
-    () => buildDirTree(notes.map((n) => n.category || "")),
-    [notes]
-  );
+  // 持久化目录路径（含根 ""）
+  const [dirPaths, setDirPaths] = useState<string[]>([""]);
+
+  const loadDirs = async () => {
+    if (!repos) return;
+    const dirs = await repos.directories.list();
+    setDirPaths(["", ...dirs]);
+  };
+
+  useEffect(() => {
+    void loadDirs();
+  }, [repos, noteVersion]);
+
+  // 目录树（来自持久化目录，空目录也显示）
+  const dirTree = useMemo(() => buildTreeFromPaths(dirPaths), [dirPaths]);
+
+  // 便签计数（按分类统计）
+  const noteCountByPath = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const n of notes) {
+      const key = n.category || "";
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [notes]);
 
   /** 当前浏览目录下的便签 */
   const dirNotes = useMemo(
@@ -139,7 +159,7 @@ export function RightSidebar() {
     }
   };
 
-  /** 新建子目录（编辑态）：输入名称 → 便签移入新目录 */
+  /** 新建子目录（任何状态）：持久化目录，编辑时便签移入 */
   const onCreateSubdir = async (parentPath: string) => {
     const name = await promptDialog({
       title: "新建子目录",
@@ -148,7 +168,39 @@ export function RightSidebar() {
     if (!name || !name.trim()) return;
     const trimmed = name.trim();
     const newPath = parentPath ? `${parentPath}/${trimmed}` : trimmed;
-    await moveSelectedTo(newPath);
+    if (!repos) return;
+    await repos.directories.ensure(newPath);
+    if (selectedId) {
+      await moveSelectedTo(newPath);
+    } else {
+      setCurrentDir(newPath);
+    }
+    void loadDirs();
+    void loadNotes();
+  };
+
+  /** 删除目录：其下便签移到根目录，目录记录删除 */
+  const onDeleteDir = async (dirPath: string) => {
+    if (!repos) return;
+    const ok = await confirmDialog({
+      title: "删除目录",
+      message: `确定删除目录「${dirPath}」？\n其下所有便签将移到「根目录」（便签不会被删除）。`,
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    const affected = notes.filter(
+      (n) => n.category === dirPath || n.category.startsWith(dirPath + "/")
+    );
+    for (const n of affected) {
+      await moveNoteFile(repos, n, "");
+    }
+    await repos.directories.remove(dirPath);
+    if (currentDir === dirPath || currentDir.startsWith(dirPath + "/")) {
+      setCurrentDir("");
+    }
+    void loadDirs();
+    void loadNotes();
   };
 
   /** 递归渲染目录树 */
@@ -176,18 +228,23 @@ export function RightSidebar() {
               <Folder size={11} className="shrink-0 text-neutral-400" />
               <span className="truncate">{node.name}</span>
               <span className="ml-auto shrink-0 text-[9px] text-neutral-400">
-                {node.noteCount}
+                {noteCountByPath.get(node.path) ?? 0}
               </span>
             </button>
-            {selected && (
-              <button
-                className="mr-0.5 shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover/dir:opacity-100"
-                title="在该目录下新建子目录（便签移入）"
-                onClick={() => void onCreateSubdir(node.path)}
-              >
-                <Plus size={11} />
-              </button>
-            )}
+            <button
+              className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover/dir:opacity-100"
+              title="新建子目录"
+              onClick={() => void onCreateSubdir(node.path)}
+            >
+              <Plus size={11} />
+            </button>
+            <button
+              className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-red-50 hover:text-red-500 group-hover/dir:opacity-100"
+              title="删除目录（其下便签移到根目录）"
+              onClick={() => void onDeleteDir(node.path)}
+            >
+              <Trash2 size={10} />
+            </button>
           </div>
           {node.children.length > 0 && renderDirTree(node.children, depth + 1)}
         </div>
@@ -301,18 +358,16 @@ export function RightSidebar() {
               <Folder size={11} className="shrink-0 text-neutral-400" />
               <span className="truncate">根目录</span>
               <span className="ml-auto shrink-0 text-[9px] text-neutral-400">
-                {notes.filter((n) => !n.category).length}
+                {noteCountByPath.get("") ?? 0}
               </span>
             </button>
-            {selected && (
-              <button
-                className="mr-0.5 shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover/dir:opacity-100"
-                title="新建子目录（便签移入）"
-                onClick={() => void onCreateSubdir("")}
-              >
-                <Plus size={11} />
-              </button>
-            )}
+            <button
+              className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover/dir:opacity-100"
+              title="新建子目录"
+              onClick={() => void onCreateSubdir("")}
+            >
+              <Plus size={11} />
+            </button>
           </div>
 
           {/* 子目录树 */}

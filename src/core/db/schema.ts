@@ -80,6 +80,13 @@ export const SCHEMA_SQL: string[] = [
     PRIMARY KEY (group_id, node_id)
   )`,
 
+  // 便签目录（持久化：删除便签后目录保留）
+  `CREATE TABLE IF NOT EXISTS directories (
+    id         TEXT PRIMARY KEY,
+    path       TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+
   // 便签元数据（内容存 Markdown 文件）
   `CREATE TABLE IF NOT EXISTS notes (
     id         TEXT PRIMARY KEY,

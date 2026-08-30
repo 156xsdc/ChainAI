@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildDirTree, collectDirPaths } from "../dirTree";
+import { buildDirTree, buildTreeFromPaths, collectDirPaths } from "../dirTree";
 
 describe("buildDirTree", () => {
   it("多级分类构建树形结构并计数", () => {
@@ -25,5 +25,15 @@ describe("buildDirTree", () => {
     expect(paths).toContain("");
     expect(paths).toContain("A");
     expect(paths).toContain("A/B");
+  });
+
+  it("buildTreeFromPaths 空目录也构建（持久化目录）", () => {
+    const tree = buildTreeFromPaths(["A", "A/B", "C"]);
+    expect(tree.map((n) => n.name)).toEqual(["A", "C"]);
+    expect(tree[0].children[0].name).toBe("B");
+    // noteCount 恒 0（由调用方填充）
+    expect(tree[0].noteCount).toBe(0);
+    // 无重复
+    expect(buildTreeFromPaths(["A", "A"])).toHaveLength(1);
   });
 });

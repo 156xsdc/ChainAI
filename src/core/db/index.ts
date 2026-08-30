@@ -13,6 +13,7 @@ import { GroupRepository } from "./repositories/groupRepo";
 import { NoteRepository } from "./repositories/noteRepo";
 import { SettingsRepository } from "./repositories/settingsRepo";
 import { RecycleBinRepository } from "./repositories/recycleBinRepo";
+import { DirectoryRepository } from "./repositories/directoryRepo";
 
 export { TauriSqlBackend, withTransaction, type SqlBackend } from "./backend";
 export * from "./types";
@@ -23,6 +24,7 @@ export * from "./repositories/groupRepo";
 export * from "./repositories/noteRepo";
 export * from "./repositories/settingsRepo";
 export * from "./repositories/recycleBinRepo";
+export * from "./repositories/directoryRepo";
 
 /** 应用数据仓库集合 */
 export interface AppRepositories {
@@ -34,6 +36,7 @@ export interface AppRepositories {
   notes: NoteRepository;
   settings: SettingsRepository;
   recycleBin: RecycleBinRepository;
+  directories: DirectoryRepository;
 }
 
 /** 对任意 backend 执行建表 */
@@ -49,6 +52,23 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 列已存在
   }
+  // 迁移：把已有便签的分类目录同步到 directories 表（幂等）
+  const noteCats = await db.select<{ category: string }>(
+    `SELECT DISTINCT category FROM notes WHERE category != ''`
+  );
+  for (const r of noteCats) {
+    const parts = r.category.split(/[\\/]/).map((s) => s.trim()).filter(Boolean);
+    let cur = "";
+    for (const part of parts) {
+      cur = cur ? `${cur}/${part}` : part;
+      await db
+        .execute(
+          `INSERT OR IGNORE INTO directories (id, path) VALUES (?, ?)`,
+          [crypto.randomUUID(), cur]
+        )
+        .catch(() => {});
+    }
+  }
 }
 
 /** 创建完整的仓库集合（传入已建表的 backend） */
@@ -62,6 +82,7 @@ export function createRepositories(db: SqlBackend): AppRepositories {
     notes: new NoteRepository(db),
     settings: new SettingsRepository(db),
     recycleBin: new RecycleBinRepository(db),
+    directories: new DirectoryRepository(db),
   };
 }
 

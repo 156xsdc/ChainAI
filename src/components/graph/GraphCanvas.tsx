@@ -24,6 +24,7 @@ import "@xyflow/react/dist/style.css";
 import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { useGraphData } from "./useGraphData";
+import { useClickOutside } from "../../hooks/useClickOutside";
 import { summarizeNodeGroup } from "../../core/context/aiSummarizer";
 import { savePngFile } from "../../core/io/files";
 import { MergeDialog } from "../modals/MergeDialog";
@@ -73,6 +74,10 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     y: number;
     nodeId: string;
   } | null>(null);
+  const groupMenuRef = useClickOutside<HTMLDivElement>(
+    () => setGroupMenu(null),
+    groupMenu !== null
+  );
 
   // 挂载时加载持久化的手动位置
   useEffect(() => {
@@ -447,6 +452,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         {/* 分组右键菜单 */}
         {groupMenu && (
           <div
+            ref={groupMenuRef}
             className="fixed z-50 w-40 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
             style={{ top: groupMenu.y, left: groupMenu.x }}
             onClick={(e) => e.stopPropagation()}

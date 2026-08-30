@@ -12,6 +12,7 @@ import {
   Star,
 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
+import { useClickOutside } from "../../hooks/useClickOutside";
 import type { Favorite, FavoriteGroup, TreeNode } from "../../core/db";
 
 interface FavItem extends Favorite {
@@ -33,6 +34,7 @@ export function FavoritesSection() {
     y: number;
     fav: FavItem;
   } | null>(null);
+  const menuRef = useClickOutside<HTMLDivElement>(() => setMenu(null), menu !== null);
 
   const load = async () => {
     if (!repos) return;
@@ -218,6 +220,7 @@ export function FavoritesSection() {
       {/* 收藏项菜单 */}
       {menu && (
         <div
+          ref={menuRef}
           className="fixed z-50 w-44 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
           style={{ top: menu.y, left: Math.min(menu.x, window.innerWidth - 190) }}
           onClick={(e) => e.stopPropagation()}

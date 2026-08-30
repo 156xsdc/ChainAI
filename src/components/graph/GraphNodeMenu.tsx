@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
+import { useClickOutside } from "../../hooks/useClickOutside";
 import { BranchDialog } from "../modals/BranchDialog";
 import { NewStartDialog } from "../modals/NewStartDialog";
 import type { TreeNode } from "../../core/db";
@@ -36,6 +37,8 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
     void repos.nodes.getNode(nodeId).then(setNode);
   }, [repos, nodeId]);
 
+  const menuRef = useClickOutside<HTMLDivElement>(onClose);
+
   const menuStyle: React.CSSProperties = {
     position: "fixed",
     top: Math.min(y, window.innerHeight - 240),
@@ -46,6 +49,7 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
   return (
     <>
       <div
+        ref={menuRef}
         style={menuStyle}
         className="w-44 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
         onClick={(e) => e.stopPropagation()}

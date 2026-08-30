@@ -12,6 +12,7 @@ import {
   Square,
 } from "lucide-react";
 import { useChatStore, type BranchOption } from "../../store/chatStore";
+import { useClickOutside } from "../../hooks/useClickOutside";
 import { BranchDialog } from "../modals/BranchDialog";
 import { NewStartDialog } from "../modals/NewStartDialog";
 import { SettingsDialog } from "../modals/SettingsDialog";
@@ -30,6 +31,7 @@ export function InputCard() {
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [children, setChildren] = useState<BranchOption[]>([]);
+  const branchMenuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false), menuOpen);
   const [branchDialogFor, setBranchDialogFor] = useState<string | null>(null);
   const [newStartOpen, setNewStartOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -83,7 +85,7 @@ export function InputCard() {
             <div className="relative">
               <button
                 className="flex max-w-[160px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
-                onClick={() => setMenuOpen(!menuOpen)}
+                onClick={() => setMenuOpen((v) => !v)}
                 title="切换分支"
               >
                 <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-neutral-500" />
@@ -93,7 +95,10 @@ export function InputCard() {
                 <ChevronDown size={12} className="shrink-0 text-neutral-400" />
               </button>
               {menuOpen && (
-                <div className="absolute bottom-full left-0 z-40 mb-1 w-52 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg">
+                <div
+                  ref={branchMenuRef}
+                  className="absolute bottom-full left-0 z-40 mb-1 w-52 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
+                >
                   <div className="px-3 py-1 text-[10px] text-neutral-400">
                     子分支（点击切换）
                   </div>

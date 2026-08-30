@@ -43,6 +43,11 @@ export function GroupWidget({ data }: NodeProps<GroupFlowNode>) {
         {collapsed ? "▸" : "▾"} {group.name || "未命名分组"}
         {collapsed && <span className="text-neutral-400">({memberCount})</span>}
       </span>
+      {collapsed && group.summary && (
+        <span className="pointer-events-none absolute left-3 right-3 top-7 line-clamp-3 text-[9px] leading-4 text-neutral-400">
+          {group.summary}
+        </span>
+      )}
     </div>
   );
 }

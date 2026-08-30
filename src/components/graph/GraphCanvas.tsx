@@ -21,6 +21,7 @@ import "@xyflow/react/dist/style.css";
 import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { useGraphData } from "./useGraphData";
+import { summarizeNodeGroup } from "../../core/context/aiSummarizer";
 import { MergeDialog } from "../modals/MergeDialog";
 import { GraphNodeMenu } from "./GraphNodeMenu";
 import {
@@ -178,6 +179,30 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     if (!window.confirm(`删除分组「${group.name}」？（节点不会被删除）`)) return;
     await repos?.groups.deleteGroup(group.id);
     setNotice("🗑️ 已删除分组");
+    bumpGraphVersion();
+  };
+
+  const aiSummarizeGroup = async (group: NodeGroup) => {
+    if (!repos || !data) return;
+    setNotice("🤖 正在生成分组总结...");
+    const memberIds =
+      data.groups.find((g) => g.group.id === group.id)?.memberIds ?? [];
+    const summary = await summarizeNodeGroup(repos, memberIds);
+    if (summary) {
+      await repos.groups.updateGroup(group.id, { summary });
+      setNotice("✅ 已生成分组总结（折叠分组可查看）");
+      bumpGraphVersion();
+    } else {
+      setUiError("总结生成失败：请检查 AI 配置后重试");
+    }
+    setGroupMenu(null);
+  };
+
+  const editGroupSummary = async (group: NodeGroup) => {
+    if (!repos) return;
+    const text = window.prompt("分组总结（手动编辑）", group.summary);
+    if (text === null) return;
+    await repos.groups.updateGroup(group.id, { summary: text.trim() });
     bumpGraphVersion();
   };
 
@@ -352,6 +377,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           >
             <GroupMenuItem label="重命名" onClick={() => renameGroup(groupMenu.group)} />
             <GroupMenuItem label="修改颜色" onClick={() => recolorGroup(groupMenu.group)} />
+            <GroupMenuItem label="🤖 AI 总结" onClick={() => void aiSummarizeGroup(groupMenu.group)} />
+            <GroupMenuItem label="编辑总结" onClick={() => editGroupSummary(groupMenu.group)} />
             <GroupMenuItem
               label={groupMenu.group.collapsed ? "展开分组" : "折叠分组"}
               onClick={() => toggleGroup(groupMenu.group.id)}

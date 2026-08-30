@@ -6,12 +6,18 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidBlock } from "./MermaidBlock";
+import { EchartsBlock } from "./EchartsBlock";
 
 const components: Components = {
   code({ className, children, ...props }) {
     const match = /language-(\w+)/.exec(className ?? "");
-    if (match && match[1] === "mermaid") {
-      return <MermaidBlock code={String(children).replace(/\n$/, "")} />;
+    const lang = match?.[1];
+    const content = String(children).replace(/\n$/, "");
+    if (lang === "mermaid") {
+      return <MermaidBlock code={content} />;
+    }
+    if (lang === "echarts" || lang === "echart") {
+      return <EchartsBlock code={content} />;
     }
     return (
       <code className={className} {...props}>

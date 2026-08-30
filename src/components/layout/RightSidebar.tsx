@@ -1,14 +1,21 @@
 /**
- * 右侧便签板：Markdown 便签的列表 / 编辑 / 自动保存
- * 内容存独立 .md 文件，元数据存 SQLite
+ * 右侧便签板：上方目录结构 + 下方便签列表/编辑
+ * - 目录树：根目录 + 分类子目录（点击筛选）
+ * - 点击便签进入编辑，可返回列表
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronsRight, CornerUpRight, Folder, Plus, StickyNote, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronsRight,
+  CornerUpRight,
+  Folder,
+  FolderTree,
+  Plus,
+  StickyNote,
+  Trash2,
+} from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
-
-const MIN_W = 220;
-const MAX_W = 420;
 import {
   deleteNoteFile,
   moveNoteFile,
@@ -17,6 +24,8 @@ import {
 } from "../../core/notes/noteService";
 import type { Note } from "../../core/db";
 
+const MIN_W = 220;
+const MAX_W = 420;
 const COLORS = ["#fafafa", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#f3e8ff"];
 
 export function RightSidebar() {
@@ -29,6 +38,7 @@ export function RightSidebar() {
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedDir, setSelectedDir] = useState(""); // "" = 根目录
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#fafafa");
@@ -93,28 +103,27 @@ export function RightSidebar() {
     setContent(await readNoteContent(repos!, note));
   };
 
-  // 按分类子目录分组（目录结构显示）
-  const groups = useMemo(() => {
-    const map = new Map<string, Note[]>();
-    for (const n of notes) {
-      const key = n.category || "";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(n);
-    }
-    return [...map.entries()]
-      .map(([cat, items]) => ({ category: cat, items }))
-      .sort((a, b) =>
-        a.category === "" ? 1 : b.category === "" ? -1 : a.category.localeCompare(b.category)
-      );
+  // 目录结构（分类集合，根目录在前）
+  const dirs = useMemo(() => {
+    const cats = [...new Set(notes.map((n) => n.category || ""))];
+    return cats.sort((a, b) =>
+      a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)
+    );
   }, [notes]);
 
-  /** 分类变更：移动文件 + 更新记录 */
-  const handleCategoryChange = async (v: string) => {
-    setCategory(v);
-    const note = notes.find((n) => n.id === selectedId);
-    if (!note || !repos) return;
-    await moveNoteFile(repos, note, v);
-    void loadNotes();
+  const dirCount = (cat: string) =>
+    notes.filter((n) => (n.category || "") === cat).length;
+
+  // 当前目录下的便签
+  const visibleNotes = useMemo(
+    () => notes.filter((n) => (n.category || "") === selectedDir),
+    [notes, selectedDir]
+  );
+
+  // 选择目录：退出编辑
+  const selectDir = (cat: string) => {
+    setSelectedDir(cat);
+    setSelectedId(null);
   };
 
   // 自动保存（防抖）
@@ -154,6 +163,16 @@ export function RightSidebar() {
         tags: t.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
       });
     }
+  };
+
+  /** 分类变更：移动文件 + 更新记录 */
+  const handleCategoryChange = async (v: string) => {
+    setCategory(v);
+    const note = notes.find((n) => n.id === selectedId);
+    if (!note || !repos) return;
+    await moveNoteFile(repos, note, v);
+    setSelectedDir(v.trim());
+    void loadNotes();
   };
 
   const handleDelete = async (note?: Note) => {
@@ -197,34 +216,135 @@ export function RightSidebar() {
         </div>
       </div>
 
-      {/* 列表 */}
+      {/* 上方：目录结构 */}
+      <div className="max-h-[38%] shrink-0 overflow-y-auto border-b border-neutral-100 px-3 py-2.5">
+        <div className="mb-1.5 flex items-center gap-1 text-[10px] text-neutral-400">
+          <FolderTree size={10} /> 目录结构
+          <span className="ml-auto text-[9px] text-neutral-300">{notes.length} 个便签</span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          {dirs.map((cat) => (
+            <button
+              key={cat || "__root__"}
+              onClick={() => selectDir(cat)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
+                selectedDir === cat
+                  ? "bg-neutral-100 text-neutral-800"
+                  : "text-neutral-500 hover:bg-neutral-50"
+              }`}
+              title={`${cat ? `AITreeNotes/${cat}` : "AITreeNotes（根目录）"}`}
+            >
+              <Folder
+                size={11}
+                className={selectedDir === cat ? "text-neutral-700" : "text-neutral-400"}
+              />
+              <span className="truncate">
+                {cat ? `${cat}/` : "根目录"}
+              </span>
+              <span className="ml-auto shrink-0 text-[9px] text-neutral-400">
+                {dirCount(cat)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 下方：列表 / 编辑 */}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {notes.length === 0 && !selected && (
-          <div className="flex flex-col items-center gap-2 py-10 text-center">
-            <StickyNote size={26} strokeWidth={1} className="text-neutral-200" />
-            <div className="text-xs text-neutral-300">
-              暂无便签
-              <br />
-              （右键消息可快速创建）
+        {selected ? (
+          /* ===== 编辑视图 ===== */
+          <div className="flex h-full flex-col">
+            {/* 返回列表 + 标题 */}
+            <div className="flex items-center gap-1.5 pb-2">
+              <button
+                className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                onClick={() => setSelectedId(null)}
+              >
+                <ArrowLeft size={12} /> 返回
+              </button>
+              <input
+                value={title}
+                onChange={(e) => handleTitleChange(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg bg-transparent px-1 py-0.5 text-sm font-medium text-neutral-800 outline-none hover:bg-neutral-50 focus:bg-neutral-50"
+                placeholder="便签标题"
+              />
+              <button
+                className="shrink-0 rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                title="关联节点跳转"
+                disabled={!selected.nodeId}
+                onClick={() => selected.nodeId && navigateTo(selected.nodeId)}
+              >
+                <CornerUpRight size={13} />
+              </button>
+              <button
+                className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-red-500"
+                title="删除便签"
+                onClick={() => void handleDelete()}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+
+            {/* 颜色 + 标签 */}
+            <div className="flex items-center gap-1.5 pb-1.5">
+              <div className="flex items-center gap-1">
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={`h-4 w-4 rounded-full border transition-transform ${
+                      color === c ? "scale-110 border-neutral-600" : "border-neutral-200"
+                    }`}
+                    style={{ background: c }}
+                    onClick={() => handleColorChange(c)}
+                  />
+                ))}
+              </div>
+              <input
+                value={tagsText}
+                onChange={(e) => handleTagsChange(e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
+                placeholder="标签（逗号分隔）"
+              />
+            </div>
+
+            {/* 分类子目录 */}
+            <div className="flex items-center gap-1.5 pb-2">
+              <Folder size={11} className="shrink-0 text-neutral-300" />
+              <input
+                value={category}
+                onChange={(e) => void handleCategoryChange(e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
+                placeholder="分类子目录（留空=根目录）"
+              />
+            </div>
+
+            <textarea
+              value={content}
+              onChange={(e) => handleContentChange(e.target.value)}
+              className="min-h-0 flex-1 resize-none bg-transparent px-1 py-1 font-mono text-[12px] leading-relaxed text-neutral-700 outline-none"
+              placeholder="支持 Markdown 格式..."
+              spellCheck={false}
+            />
+            <div className="px-1 py-1 text-[9px] text-neutral-300">
+              {selected.filePath}
             </div>
           </div>
-        )}
-
-        {!selected &&
-          groups.map(({ category: cat, items }) => (
-            <div key={cat || "__root__"} className="mb-2">
-              {/* 目录分组头（文件结构） */}
-              <div className="flex items-center gap-1 px-1.5 pb-1 pt-0.5 text-[10px] text-neutral-400">
-                <Folder size={9} />
-                {cat ? `AITreeNotes/${cat}` : "AITreeNotes（根目录）"}
-                <span className="text-neutral-300">({items.length})</span>
+        ) : (
+          /* ===== 列表（当前目录） ===== */
+          <>
+            {visibleNotes.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <StickyNote size={26} strokeWidth={1} className="text-neutral-200" />
+                <div className="text-xs text-neutral-300">
+                  {notes.length === 0 ? "暂无便签" : "此目录暂无便签"}
+                  <br />
+                  {notes.length === 0 && "（右键消息或 ➕ 可创建）"}
+                </div>
               </div>
+            ) : (
               <div className="flex flex-col gap-1.5">
-                {items.map((n) => (
-                  <div
-                    key={n.id}
-                    className="group/note relative"
-                  >
+                {visibleNotes.map((n) => (
+                  <div key={n.id} className="group/note relative">
                     <button
                       onClick={() => void selectNote(n)}
                       className="flex w-full items-start gap-2 rounded-xl border border-neutral-200 px-2.5 py-2 text-left hover:border-neutral-300 hover:shadow-sm"
@@ -248,7 +368,6 @@ export function RightSidebar() {
                         </span>
                       )}
                     </button>
-                    {/* 列表项快捷删除 */}
                     <button
                       className="absolute right-1.5 top-1.5 hidden h-5 w-5 items-center justify-center rounded-md bg-white/90 text-neutral-400 shadow-sm hover:bg-red-50 hover:text-red-500 group-hover/note:flex"
                       title="删除便签"
@@ -262,82 +381,10 @@ export function RightSidebar() {
                   </div>
                 ))}
               </div>
-            </div>
-          ))}
+            )}
+          </>
+        )}
       </div>
-
-      {/* 编辑视图 */}
-      {selected && (
-        <div className="flex min-h-0 flex-1 flex-col border-t border-neutral-100">
-          <div className="flex items-center gap-1.5 px-3 pt-2">
-            <input
-              value={title}
-              onChange={(e) => handleTitleChange(e.target.value)}
-              className="min-w-0 flex-1 rounded-lg bg-transparent px-1 py-0.5 text-sm font-medium text-neutral-800 outline-none hover:bg-neutral-50 focus:bg-neutral-50"
-              placeholder="便签标题"
-            />
-            <button
-              className="shrink-0 rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-              title="关联节点跳转"
-              disabled={!selected.nodeId}
-              onClick={() => selected.nodeId && navigateTo(selected.nodeId)}
-            >
-              <CornerUpRight size={13} />
-            </button>
-            <button
-              className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-red-500"
-              title="删除便签"
-              onClick={() => void handleDelete()}
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-
-          {/* 颜色 + 标签 */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5">
-            <div className="flex items-center gap-1">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  className={`h-4 w-4 rounded-full border transition-transform ${
-                    color === c ? "scale-110 border-neutral-600" : "border-neutral-200"
-                  }`}
-                  style={{ background: c }}
-                  onClick={() => handleColorChange(c)}
-                />
-              ))}
-            </div>
-            <input
-              value={tagsText}
-              onChange={(e) => handleTagsChange(e.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
-              placeholder="标签（逗号分隔）"
-            />
-          </div>
-
-          {/* 分类子目录（移动文件到子目录） */}
-          <div className="flex items-center gap-1.5 px-3 pb-1.5">
-            <Folder size={11} className="shrink-0 text-neutral-300" />
-            <input
-              value={category}
-              onChange={(e) => void handleCategoryChange(e.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
-              placeholder="分类子目录（如：项目A，留空=根目录）"
-            />
-          </div>
-
-          <textarea
-            value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
-            className="min-h-0 flex-1 resize-none bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed text-neutral-700 outline-none"
-            placeholder="支持 Markdown 格式..."
-            spellCheck={false}
-          />
-          <div className="px-3 py-1 text-[9px] text-neutral-300">
-            {selected.filePath}
-          </div>
-        </div>
-      )}
 
       {/* 拖拽调整宽度手柄 */}
       <div

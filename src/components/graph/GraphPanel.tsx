@@ -6,6 +6,7 @@ import { LayoutTemplate, Maximize2, Trash2, X } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
+import { confirmDialog } from "../../store/dialogStore";
 import { GraphCanvas } from "./GraphCanvas";
 
 const MIN_W = 260;
@@ -19,14 +20,15 @@ export function GraphPanel() {
   const [width, setWidth] = useState(380);
   const dragging = useRef(false);
 
-  const handleClearAll = () => {
-    if (
-      window.confirm(
-        "确定清空全部对话吗？\n\n所有节点和消息将移入回收站（30天内可恢复），会话记录一并清空。"
-      )
-    ) {
-      void clearAllChat();
-    }
+  const handleClearAll = async () => {
+    const ok = await confirmDialog({
+      title: "清空全部对话",
+      message:
+        "确定清空全部对话吗？\n\n所有节点和消息将移入回收站（30天内可恢复），会话记录一并清空。",
+      confirmText: "清空",
+      danger: true,
+    });
+    if (ok) void clearAllChat();
   };
 
   const startDrag = (e: React.MouseEvent) => {

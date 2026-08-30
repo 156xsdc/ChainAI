@@ -120,6 +120,32 @@ body {
   margin: 1em 0;
 }
 
+/* 弹窗动画 */
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+.animate-modal-fade {
+  animation: modal-fade 0.15s ease-out;
+}
+.animate-modal-pop {
+  animation: modal-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* React Flow 节点拖拽反馈 */
 .react-flow__node.dragging {
   opacity: 0.75;

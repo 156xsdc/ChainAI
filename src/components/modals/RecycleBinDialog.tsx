@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
+import { confirmDialog } from "../../store/dialogStore";
 import { Modal } from "../common/Modal";
 
 interface BinItem {
@@ -56,7 +57,13 @@ export function RecycleBinDialog({
 
   const handlePurge = async (nodeId: string) => {
     if (!repos) return;
-    if (!window.confirm("彻底删除后不可恢复，确定？")) return;
+    const ok = await confirmDialog({
+      title: "彻底删除",
+      message: "彻底删除后不可恢复，确定？",
+      confirmText: "彻底删除",
+      danger: true,
+    });
+    if (!ok) return;
     await repos.nodes.hardDeleteNode(nodeId);
     await repos.recycleBin.remove(nodeId);
     void load();
@@ -64,7 +71,13 @@ export function RecycleBinDialog({
 
   const handleEmptyAll = async () => {
     if (!repos || items.length === 0) return;
-    if (!window.confirm(`彻底删除回收站中全部 ${items.length} 个节点？不可恢复！`)) return;
+    const ok = await confirmDialog({
+      title: "清空回收站",
+      message: `彻底删除回收站中全部 ${items.length} 个节点？\n不可恢复！`,
+      confirmText: "清空",
+      danger: true,
+    });
+    if (!ok) return;
     for (const it of items) {
       await repos.nodes.hardDeleteNode(it.nodeId);
       await repos.recycleBin.remove(it.nodeId);

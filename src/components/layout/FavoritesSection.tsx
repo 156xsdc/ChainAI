@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { confirmDialog, promptDialog } from "../../store/dialogStore";
 import type { Favorite, FavoriteGroup, TreeNode } from "../../core/db";
 
 interface FavItem extends Favorite {
@@ -58,7 +59,10 @@ export function FavoritesSection() {
 
   const createGroup = async () => {
     if (!repos) return;
-    const name = window.prompt("分组名称", "新收藏分组");
+    const name = await promptDialog({
+      title: "新建收藏分组",
+      defaultValue: "新收藏分组",
+    });
     if (name === null) return;
     const color = GROUP_COLORS[groups.length % GROUP_COLORS.length];
     await repos.favorites.createGroup(name.trim() || "未命名分组", color);
@@ -75,7 +79,11 @@ export function FavoritesSection() {
 
   const editNote = async (fav: FavItem) => {
     if (!repos) return;
-    const note = window.prompt("收藏备注", fav.note);
+    const note = await promptDialog({
+      title: "编辑收藏备注",
+      defaultValue: fav.note,
+      placeholder: "备注内容",
+    });
     if (note === null) return;
     await repos.favorites.updateNote(fav.id, note);
     setMenu(null);
@@ -84,7 +92,11 @@ export function FavoritesSection() {
 
   const recolorGroup = async (group: FavoriteGroup) => {
     if (!repos) return;
-    const color = window.prompt("分组颜色（HEX）", group.color);
+    const color = await promptDialog({
+      title: "修改分组颜色",
+      label: "HEX 颜色值",
+      defaultValue: group.color,
+    });
     if (color === null) return;
     await repos.backend.execute(
       `UPDATE favorite_groups SET color = ? WHERE id = ?`,
@@ -97,7 +109,13 @@ export function FavoritesSection() {
     if (!repos) return;
     const g = groups.find((x) => x.id === groupId);
     if (!g) return;
-    if (!window.confirm(`删除分组「${g.name}」？组内收藏将移到未分组（收藏不会删除）`)) return;
+    const ok = await confirmDialog({
+      title: "删除收藏分组",
+      message: `确定删除分组「${g.name}」？\n组内收藏将移到「未分组」（收藏不会被删除）`,
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     await repos.favorites.deleteGroup(groupId);
     setNotice("🗑️ 已删除收藏分组");
     void load();

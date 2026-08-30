@@ -29,6 +29,7 @@ import { createNoteFile } from "../core/notes/noteService";
 import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
 import { useGraphStore } from "./graphStore";
+import { confirmDialog } from "./dialogStore";
 import type { Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
 import {
@@ -551,7 +552,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const file = await openJsonFile();
       if (!file) return;
-      if (!window.confirm("导入将覆盖当前所有数据，确定继续吗？")) return;
+      const ok = await confirmDialog({
+        title: "导入 JSON 备份",
+        message: "导入将覆盖当前所有数据，确定继续吗？",
+        confirmText: "覆盖导入",
+        danger: true,
+      });
+      if (!ok) return;
       const result = await importAll(repos, file.content);
       // 重新初始化（恢复 provider 配置与当前节点）
       await get().init();

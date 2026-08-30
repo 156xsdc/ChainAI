@@ -25,6 +25,7 @@ import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { useGraphData } from "./useGraphData";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { confirmDialog, promptDialog } from "../../store/dialogStore";
 import { summarizeNodeGroup } from "../../core/context/aiSummarizer";
 import { savePngFile } from "../../core/io/files";
 import { MergeDialog } from "../modals/MergeDialog";
@@ -162,7 +163,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
 
   const handleCreateGroup = async () => {
     if (!repos || selectedIds.size === 0) return;
-    const name = window.prompt("分组名称", "新分组");
+    const name = await promptDialog({ title: "新建分组", defaultValue: "新分组" });
     if (name === null) return;
     const g = await repos.groups.createGroup({ name: name.trim() || "未命名分组" });
     await repos.groups.addMembers(g.id, [...selectedIds]);
@@ -172,21 +173,31 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   };
 
   const renameGroup = async (group: NodeGroup) => {
-    const name = window.prompt("重命名分组", group.name);
+    const name = await promptDialog({ title: "重命名分组", defaultValue: group.name });
     if (name === null) return;
     await repos?.groups.updateGroup(group.id, { name: name.trim() });
     bumpGraphVersion();
   };
 
   const recolorGroup = async (group: NodeGroup) => {
-    const color = window.prompt("分组颜色（HEX，如 #5b5bd6）", group.color);
+    const color = await promptDialog({
+      title: "修改分组颜色",
+      label: "HEX 颜色值（如 #5b5bd6）",
+      defaultValue: group.color,
+    });
     if (color === null) return;
     await repos?.groups.updateGroup(group.id, { color: color.trim() });
     bumpGraphVersion();
   };
 
   const deleteGroup = async (group: NodeGroup) => {
-    if (!window.confirm(`删除分组「${group.name}」？（节点不会被删除）`)) return;
+    const ok = await confirmDialog({
+      title: "删除分组",
+      message: `确定删除分组「${group.name}」？\n（分组内节点不会被删除）`,
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     await repos?.groups.deleteGroup(group.id);
     setNotice("🗑️ 已删除分组");
     bumpGraphVersion();
@@ -210,7 +221,11 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
 
   const editGroupSummary = async (group: NodeGroup) => {
     if (!repos) return;
-    const text = window.prompt("分组总结（手动编辑）", group.summary);
+    const text = await promptDialog({
+      title: "编辑分组总结",
+      defaultValue: group.summary,
+      placeholder: "总结内容（Markdown）",
+    });
     if (text === null) return;
     await repos.groups.updateGroup(group.id, { summary: text.trim() });
     bumpGraphVersion();

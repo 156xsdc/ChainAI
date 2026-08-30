@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
+import { confirmDialog } from "../../store/dialogStore";
 import {
   deleteNoteFile,
   moveNoteFile,
@@ -181,7 +182,13 @@ export function RightSidebar() {
     if (!repos) return;
     const target = note ?? notes.find((n) => n.id === selectedId);
     if (!target) return;
-    if (!window.confirm(`删除便签「${target.title}」？（文件 ${target.filePath}）`)) return;
+    const ok = await confirmDialog({
+      title: "删除便签",
+      message: `确定删除便签「${target.title}」？\n（文件 ${target.filePath}）`,
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     await deleteNoteFile(repos, target);
     if (selectedId === target.id) setSelectedId(null);
     bumpNoteVersion();

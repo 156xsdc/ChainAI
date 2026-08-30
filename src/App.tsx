@@ -12,6 +12,8 @@ import { RightSidebar } from "./components/layout/RightSidebar";
 import { GraphPanel } from "./components/graph/GraphPanel";
 import { GraphFullscreen } from "./components/graph/GraphFullscreen";
 import { SearchDialog } from "./components/modals/SearchDialog";
+import { ConfirmDialog } from "./components/common/ConfirmDialog";
+import { PromptDialog } from "./components/common/PromptDialog";
 
 export default function App() {
   const init = useChatStore((s) => s.init);
@@ -141,6 +143,10 @@ function AppContent({
 
       {/* 全局搜索 */}
       <SearchDialog />
+
+      {/* 全局对话框（确认 / 输入） */}
+      <ConfirmDialog />
+      <PromptDialog />
 
       {/* 左下角软提醒 */}
       {uiError && (

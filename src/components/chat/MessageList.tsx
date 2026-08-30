@@ -101,7 +101,11 @@ export function MessageList() {
             const isStreamingThis =
               isLast && streaming && item.role === "assistant";
             // 动态合并流式内容（重新生成/版本切换时 streamingBuffer 覆盖显示）
-            const streamed = streamingBuffer[item.nodeId];
+            // 注意：只覆盖 AI 消息——用户提问与 AI 回答同属一个节点（同 nodeId）
+            const streamed =
+              item.role === "assistant"
+                ? streamingBuffer[item.nodeId]
+                : undefined;
             const displayItem =
               streamed !== undefined
                 ? { ...item, content: streamed }

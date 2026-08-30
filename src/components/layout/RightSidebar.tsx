@@ -1,28 +1,28 @@
 /**
- * 右侧便签板：上方目录结构 + 下方便签列表/编辑
- * - 目录树：根目录 + 分类子目录（点击筛选）
- * - 点击便签进入编辑，可返回列表
+ * 右侧便签板：上方目录树 + 下方列表/编辑
+ * - 目录树：完整层级展示（缩进），点击目录 = 浏览筛选 / 编辑时移动便签
+ * - 编辑时 hover 目录显示 ＋ 可新建子目录（便签自动移入）
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ChevronsRight,
   CornerUpRight,
   Folder,
-  FolderTree,
   Plus,
   StickyNote,
   Trash2,
 } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
-import { confirmDialog } from "../../store/dialogStore";
+import { confirmDialog, promptDialog } from "../../store/dialogStore";
 import {
   deleteNoteFile,
   moveNoteFile,
   readNoteContent,
   writeNoteContent,
 } from "../../core/notes/noteService";
+import { buildDirTree, type DirNode } from "../../core/notes/dirTree";
 import type { Note } from "../../core/db";
 
 const MIN_W = 220;
@@ -39,8 +39,8 @@ export function RightSidebar() {
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** 文件浏览器导航路径（[] = 根目录，["项目A"] = AITreeNotes/项目A） */
-  const [path, setPath] = useState<string[]>([]);
+  /** 浏览态：当前查看目录（"" = 根） */
+  const [currentDir, setCurrentDir] = useState("");
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#fafafa");
@@ -102,42 +102,97 @@ export function RightSidebar() {
     setColor(note.color);
     setTagsText(note.tags.join(", "));
     setCategory(note.category);
+    setCurrentDir(note.category);
     setContent(await readNoteContent(repos!, note));
   };
 
-  // 当前导航路径字符串（"" = 根目录）
-  const currentPath = path.join("/");
-
-  // 当前目录的直接子目录（支持多级导航）
-  const subDirs = useMemo(() => {
-    const set = new Set<string>();
-    for (const n of notes) {
-      const parts = (n.category || "").split(/[\\/]/).filter(Boolean);
-      if (parts.length <= path.length) continue;
-      if (path.length === 0 || n.category.startsWith(currentPath + "/")) {
-        set.add(parts[path.length]);
-      }
-    }
-    return [...set].sort();
-  }, [notes, path, currentPath]);
-
-  // 当前目录下的便签
-  const dirNotes = useMemo(
-    () => notes.filter((n) => (n.category || "") === currentPath),
-    [notes, currentPath]
+  // 目录树
+  const dirTree = useMemo(
+    () => buildDirTree(notes.map((n) => n.category || "")),
+    [notes]
   );
 
-  // 返回上级目录
-  const goUp = () => setPath((p) => p.slice(0, -1));
+  /** 当前浏览目录下的便签 */
+  const dirNotes = useMemo(
+    () => notes.filter((n) => (n.category || "") === currentDir),
+    [notes, currentDir]
+  );
 
-  /** 便签移动到当前导航目录 */
-  const handleMoveToCurrent = async () => {
+  const selected = notes.find((n) => n.id === selectedId);
+
+  /** 移动便签到目录（编辑态） */
+  const moveSelectedTo = async (dirPath: string) => {
     const note = notes.find((n) => n.id === selectedId);
     if (!note || !repos) return;
-    await moveNoteFile(repos, note, currentPath);
-    setCategory(currentPath);
+    await moveNoteFile(repos, note, dirPath);
+    setCategory(dirPath);
+    setCurrentDir(dirPath);
     void loadNotes();
   };
+
+  /** 点击目录：编辑态移动便签 / 浏览态筛选 */
+  const onSelectDir = (dirPath: string) => {
+    if (selectedId) {
+      void moveSelectedTo(dirPath);
+    } else {
+      setCurrentDir(dirPath);
+    }
+  };
+
+  /** 新建子目录（编辑态）：输入名称 → 便签移入新目录 */
+  const onCreateSubdir = async (parentPath: string) => {
+    const name = await promptDialog({
+      title: "新建子目录",
+      placeholder: "子目录名称",
+    });
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    const newPath = parentPath ? `${parentPath}/${trimmed}` : trimmed;
+    await moveSelectedTo(newPath);
+  };
+
+  /** 递归渲染目录树 */
+  const renderDirTree = (nodes: DirNode[], depth: number): ReactNode =>
+    nodes.map((node) => {
+      const isHighlight =
+        selectedId !== null
+          ? category === node.path
+          : currentDir === node.path;
+      return (
+        <div key={node.path}>
+          <div
+            className="group/dir flex items-center"
+            style={{ paddingLeft: depth * 14 }}
+          >
+            <button
+              onClick={() => onSelectDir(node.path)}
+              className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
+                isHighlight
+                  ? "bg-neutral-100 font-medium text-neutral-800"
+                  : "text-neutral-500 hover:bg-neutral-50"
+              }`}
+              title={`${node.path ? `AITreeNotes/${node.path}` : "AITreeNotes（根目录）"}`}
+            >
+              <Folder size={11} className="shrink-0 text-neutral-400" />
+              <span className="truncate">{node.name}</span>
+              <span className="ml-auto shrink-0 text-[9px] text-neutral-400">
+                {node.noteCount}
+              </span>
+            </button>
+            {selected && (
+              <button
+                className="mr-0.5 shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover/dir:opacity-100"
+                title="在该目录下新建子目录（便签移入）"
+                onClick={() => void onCreateSubdir(node.path)}
+              >
+                <Plus size={11} />
+              </button>
+            )}
+          </div>
+          {node.children.length > 0 && renderDirTree(node.children, depth + 1)}
+        </div>
+      );
+    });
 
   // 自动保存（防抖）
   const scheduleSave = (note: Note, field: Partial<Pick<Note, "title" | "color" | "tags">> = {}) => {
@@ -195,8 +250,6 @@ export function RightSidebar() {
     void loadNotes();
   };
 
-  const selected = notes.find((n) => n.id === selectedId);
-
   return (
     <aside
       className="relative flex shrink-0 flex-col border-l border-neutral-200 bg-white"
@@ -225,86 +278,45 @@ export function RightSidebar() {
         </div>
       </div>
 
-      {/* 上方：文件浏览器（多级导航 + 返回上级） */}
-      <div className="max-h-[38%] shrink-0 overflow-y-auto border-b border-neutral-100 px-3 py-2.5">
-        <div className="mb-1 flex items-center gap-1 text-[10px] text-neutral-400">
-          <FolderTree size={10} /> 目录结构
+      {/* 上方：目录树 */}
+      <div className="max-h-[42%] shrink-0 overflow-y-auto border-b border-neutral-100 px-3 py-2.5">
+        <div className="mb-1.5 flex items-center gap-1 text-[10px] text-neutral-400">
+          <Folder size={10} /> 目录结构
           <span className="ml-auto text-[9px] text-neutral-300">
-            {selected ? "选择便签位置" : `${dirNotes.length} 个便签`}
+            {selected ? "点击目录 = 移动便签到此" : `${notes.length} 个便签`}
           </span>
         </div>
 
-        {/* 面包屑 + 返回上级 */}
-        <div className="mb-1.5 flex items-center gap-1 overflow-x-auto text-[10px] whitespace-nowrap">
-          <button
-            className={`shrink-0 rounded px-1 py-0.5 hover:bg-neutral-100 ${
-              path.length === 0 ? "font-medium text-neutral-700" : "text-neutral-400 hover:text-neutral-600"
-            }`}
-            onClick={() => setPath([])}
-          >
-            AITreeNotes
-          </button>
-          {path.map((seg, i) => (
-            <span key={i} className="flex shrink-0 items-center gap-1">
-              <span className="text-neutral-300">/</span>
-              <button
-                className={`rounded px-1 py-0.5 hover:bg-neutral-100 ${
-                  i === path.length - 1
-                    ? "font-medium text-neutral-700"
-                    : "text-neutral-400 hover:text-neutral-600"
-                }`}
-                onClick={() => setPath(path.slice(0, i + 1))}
-              >
-                {seg}
-              </button>
-            </span>
-          ))}
-          {path.length > 0 && (
+        <div className="flex flex-col">
+          {/* 根目录 */}
+          <div className="group/dir flex items-center">
             <button
-              className="ml-1 shrink-0 rounded border border-neutral-200 px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
-              onClick={goUp}
-              title="返回上级目录"
-            >
-              ↑ 上级
-            </button>
-          )}
-        </div>
-
-        {/* 当前目录内容 */}
-        <div className="flex flex-col gap-0.5">
-          {/* 子目录 */}
-          {subDirs.map((d) => (
-            <button
-              key={d}
-              onClick={() => setPath([...path, d])}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] text-neutral-600 hover:bg-neutral-100"
-              title={`进入 ${d}/`}
+              onClick={() => onSelectDir("")}
+              className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
+                (selectedId !== null ? category === "" : currentDir === "")
+                  ? "bg-neutral-100 font-medium text-neutral-800"
+                  : "text-neutral-500 hover:bg-neutral-50"
+              }`}
             >
               <Folder size={11} className="shrink-0 text-neutral-400" />
-              <span className="truncate">{d}/</span>
+              <span className="truncate">根目录</span>
+              <span className="ml-auto shrink-0 text-[9px] text-neutral-400">
+                {notes.filter((n) => !n.category).length}
+              </span>
             </button>
-          ))}
+            {selected && (
+              <button
+                className="mr-0.5 shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover/dir:opacity-100"
+                title="新建子目录（便签移入）"
+                onClick={() => void onCreateSubdir("")}
+              >
+                <Plus size={11} />
+              </button>
+            )}
+          </div>
 
-          {/* 当前目录便签 */}
-          {dirNotes.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => void selectNote(n)}
-              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] hover:bg-neutral-100 ${
-                selectedId === n.id ? "bg-neutral-100 text-neutral-800" : "text-neutral-500"
-              }`}
-              title={n.title}
-            >
-              <StickyNote size={10} className="shrink-0 text-neutral-300" />
-              <span className="truncate">{n.title || "未命名便签"}</span>
-            </button>
-          ))}
-
-          {subDirs.length === 0 && dirNotes.length === 0 && (
-            <div className="px-2 py-2 text-[10px] text-neutral-300">
-              空目录{selected ? "（点下方「移到此处」可把便签放这里）" : ""}
-            </div>
-          )}
+          {/* 子目录树 */}
+          {renderDirTree(dirTree, 1)}
         </div>
       </div>
 
@@ -344,6 +356,20 @@ export function RightSidebar() {
               </button>
             </div>
 
+            {/* 位置（在目录树中选择） */}
+            <div className="flex items-center gap-1.5 pb-1">
+              <Folder size={11} className="shrink-0 text-neutral-300" />
+              <span
+                className="min-w-0 flex-1 truncate text-[10px] text-neutral-500"
+                title={category}
+              >
+                位置：AITreeNotes{category ? `/${category}` : ""}
+              </span>
+            </div>
+            <div className="pb-2 text-[9px] leading-relaxed text-neutral-300">
+              在上方目录树点击目录即可移动；悬停目录的 ＋ 可新建子目录
+            </div>
+
             {/* 颜色 + 标签 */}
             <div className="flex items-center gap-1.5 pb-1.5">
               <div className="flex items-center gap-1">
@@ -364,25 +390,6 @@ export function RightSidebar() {
                 className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
                 placeholder="标签（逗号分隔）"
               />
-            </div>
-
-            {/* 目录位置：在上方目录浏览器中选择 */}
-            <div className="flex items-center gap-1.5 pb-2">
-              <Folder size={11} className="shrink-0 text-neutral-300" />
-              <div className="min-w-0 flex-1 truncate text-[10px] text-neutral-500" title={currentPath}>
-                位置：AITreeNotes{currentPath ? `/${currentPath}` : ""}
-              </div>
-              <button
-                className="shrink-0 rounded-md border border-neutral-300 px-2 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-                disabled={category === currentPath}
-                onClick={() => void handleMoveToCurrent()}
-                title="在上方目录中导航，然后点此按钮移动便签"
-              >
-                移到此处
-              </button>
-            </div>
-            <div className="-mt-1 pb-1.5 text-[9px] text-neutral-300">
-              在上方目录结构中导航到目标目录，点「移到此处」更换位置
             </div>
 
             <textarea

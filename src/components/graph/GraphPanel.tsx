@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  Columns2,
   LayoutTemplate,
   Maximize2,
   Pencil,
@@ -26,6 +27,8 @@ const MAX_W = 640;
 export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
   const setLeftPanel = useUIStore((s) => s.setLeftPanel);
   const setGraphFullscreen = useUIStore((s) => s.setGraphFullscreen);
+  const focusMode = useUIStore((s) => s.focusMode);
+  const toggleFocusMode = useUIStore((s) => s.toggleFocusMode);
   const leftPanelWidth = useUIStore((s) => s.leftPanelWidth);
   const setLeftPanelWidth = useUIStore((s) => s.setLeftPanelWidth);
   const resetLayout = useGraphStore((s) => s.resetLayout);
@@ -207,6 +210,17 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
         </div>
 
         <div className="flex items-center gap-0.5">
+          <button
+            className={`rounded-md p-1 hover:bg-neutral-100 ${
+              focusMode
+                ? "bg-neutral-100 text-neutral-800"
+                : "text-neutral-400 hover:text-neutral-700"
+            }`}
+            title={focusMode ? "退出专注模式" : "专注模式（树状图+便签并排）"}
+            onClick={() => toggleFocusMode()}
+          >
+            <Columns2 size={13} />
+          </button>
           <button
             className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
             title="恢复自动布局"

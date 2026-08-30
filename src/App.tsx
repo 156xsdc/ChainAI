@@ -28,6 +28,7 @@ export default function App() {
   const leftPanel = useUIStore((s) => s.leftPanel);
   const rightExpanded = useUIStore((s) => s.rightExpanded);
   const graphFullscreen = useUIStore((s) => s.graphFullscreen);
+  const focusMode = useUIStore((s) => s.focusMode);
 
   useEffect(() => {
     init();
@@ -94,6 +95,7 @@ export default function App() {
         leftPanel={leftPanel}
         rightExpanded={rightExpanded}
         graphFullscreen={graphFullscreen}
+        focusMode={focusMode}
         uiError={uiError}
         notice={notice}
         noticeTone={noticeTone}
@@ -109,6 +111,7 @@ function AppContent({
   leftPanel,
   rightExpanded,
   graphFullscreen,
+  focusMode,
   uiError,
   notice,
   noticeTone,
@@ -119,6 +122,7 @@ function AppContent({
   leftPanel: "graph" | "favorites" | null;
   rightExpanded: boolean;
   graphFullscreen: boolean;
+  focusMode: boolean;
   uiError: string | null;
   notice: string | null;
   noticeTone: "success" | "info" | "error";
@@ -126,8 +130,8 @@ function AppContent({
   clearError: () => void;
   clearNotice: () => void;
 }) {
-  // 专注模式：树状图 + 便签并排（无聊天区）
-  const focusPair = leftPanel === "graph" && rightExpanded && !graphFullscreen;
+  // 专注模式：树状图 + 便签并排（无聊天区），由按钮显式切换
+  const focusPair = leftPanel === "graph" && focusMode && !graphFullscreen;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-neutral-800">
@@ -145,7 +149,7 @@ function AppContent({
           <ChatArea />
         </main>
       )}
-      {rightExpanded ? <RightSidebar /> : <Rail side="right" />}
+      {focusPair || rightExpanded ? <RightSidebar /> : <Rail side="right" />}
       </div>
 
       {/* 树状图全屏 */}

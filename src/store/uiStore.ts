@@ -17,6 +17,8 @@ interface UIState {
   searchOpen: boolean;
   /** 左侧面板共享宽度（树状图/收藏 共用，拖宽互通） */
   leftPanelWidth: number;
+  /** 专注模式：树状图 + 便签并排（无聊天区） */
+  focusMode: boolean;
 
   setLeftPanel: (p: LeftPanel) => void;
   toggleLeftPanel: (p: Exclude<LeftPanel, null>) => void;
@@ -24,6 +26,8 @@ interface UIState {
   setGraphFullscreen: (v: boolean) => void;
   setSearchOpen: (v: boolean) => void;
   setLeftPanelWidth: (w: number) => void;
+  setFocusMode: (v: boolean) => void;
+  toggleFocusMode: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -32,9 +36,17 @@ export const useUIStore = create<UIState>((set) => ({
   graphFullscreen: false,
   searchOpen: false,
   leftPanelWidth: 380,
+  focusMode: false,
 
   setLeftPanel: (p) => set({ leftPanel: p }),
   setLeftPanelWidth: (w) => set({ leftPanelWidth: w }),
+  setFocusMode: (v) => set({ focusMode: v }),
+  toggleFocusMode: () =>
+    set((s) => ({
+      focusMode: !s.focusMode,
+      // 进入专注时自动展开便签板
+      rightExpanded: !s.focusMode ? true : s.rightExpanded,
+    })),
   toggleLeftPanel: (p) =>
     set((s) => ({ leftPanel: s.leftPanel === p ? null : p })),
   setSidebar: (side, expanded) =>

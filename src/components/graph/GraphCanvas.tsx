@@ -22,6 +22,7 @@ import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { useGraphData } from "./useGraphData";
 import { MergeDialog } from "../modals/MergeDialog";
+import { GraphNodeMenu } from "./GraphNodeMenu";
 import {
   NODE_H,
   NODE_W,
@@ -60,6 +61,11 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     x: number;
     y: number;
     group: NodeGroup;
+  } | null>(null);
+  const [nodeMenu, setNodeMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId: string;
   } | null>(null);
 
   // 挂载时加载持久化的手动位置
@@ -268,7 +274,16 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           onNodeClick={(_, node) => {
             if (node.type === "tree") navigateTo(node.id);
           }}
+          onNodeContextMenu={(e, node) => {
+            if (node.type !== "tree") return;
+            e.preventDefault();
+            setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
+          }}
           onNodeDragStop={handleNodeDragStop}
+          onPaneClick={() => {
+            setNodeMenu(null);
+            setGroupMenu(null);
+          }}
           onSelectionChange={handleSelectionChange}
           nodesDraggable
           selectionOnDrag
@@ -316,6 +331,16 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
               取消
             </button>
           </div>
+        )}
+
+        {/* 节点右键菜单 */}
+        {nodeMenu && (
+          <GraphNodeMenu
+            x={nodeMenu.x}
+            y={nodeMenu.y}
+            nodeId={nodeMenu.nodeId}
+            onClose={() => setNodeMenu(null)}
+          />
         )}
 
         {/* 分组右键菜单 */}

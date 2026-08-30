@@ -8,18 +8,21 @@ import { Modal } from "../common/Modal";
 interface NewStartDialogProps {
   open: boolean;
   onClose: () => void;
+  /** 指定父节点（默认使用当前节点） */
+  parentNodeId?: string;
 }
 
-export function NewStartDialog({ open, onClose }: NewStartDialogProps) {
+export function NewStartDialog({ open, onClose, parentNodeId }: NewStartDialogProps) {
   const currentNodeId = useChatStore((s) => s.currentNodeId);
   const createNewStart = useChatStore((s) => s.createNewStart);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
   const handleConfirm = async () => {
-    if (!currentNodeId || busy) return;
+    const parentId = parentNodeId ?? currentNodeId;
+    if (!parentId || busy) return;
     setBusy(true);
-    await createNewStart(currentNodeId);
+    await createNewStart(parentId);
     setBusy(false);
     setName("");
     onClose();

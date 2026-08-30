@@ -16,6 +16,7 @@ import { saveJsonFile, openJsonFile } from "../core/io/files";
 import { createNoteFile } from "../core/notes/noteService";
 import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
+import { useGraphStore } from "./graphStore";
 import type { Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
 import {
@@ -78,6 +79,8 @@ interface ChatState {
     params?: { name?: string; inheritCount?: number }
   ) => Promise<string>;
   toggleFavorite: (nodeId: string) => Promise<void>;
+  /** 切换📌保留标记（自动清理保护） */
+  toggleKeep: (nodeId: string) => Promise<void>;
   /** 删除分支（该节点及其全部后代）：软删除 + 回收站 + 导航调整 */
   deleteBranch: (nodeId: string) => Promise<{ deletedCount: number }>;
   stopStreaming: () => void;
@@ -381,6 +384,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await repos.favorites.add(nodeId);
       await repos.nodes.updateNode(nodeId, { isFavorited: true });
     }
+    await get().refreshPath();
+  },
+
+  toggleKeep: async (nodeId) => {
+    const { repos } = get();
+    if (!repos) return;
+    const node = await repos.nodes.getNode(nodeId);
+    if (!node) return;
+    await repos.nodes.updateNode(nodeId, { isKept: !node.isKept });
+    useGraphStore.getState().bumpGraphVersion();
     await get().refreshPath();
   },
 

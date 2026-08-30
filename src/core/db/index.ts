@@ -4,6 +4,7 @@
  * - 测试环境：直接传入 NodeSqliteBackend
  */
 import Database from "@tauri-apps/plugin-sql";
+import { getAppDataDir, joinPath } from "../io/appPaths";
 import { SCHEMA_SQL } from "./schema";
 import { TauriSqlBackend, type SqlBackend } from "./backend";
 import { NodeRepository } from "./repositories/nodeRepo";
@@ -147,11 +148,38 @@ export function createRepositories(db: SqlBackend): AppRepositories {
 
 /**
  * 生产环境初始化：加载 Tauri SQLite 并建表
- * 数据库文件默认位于应用数据目录（后续可配置迁移）
+ * 数据库位于应用数据目录（安装版=exe所在目录；开发版=AppData），
+ * 安装版首次启动时自动从旧位置（AppData）迁移已有数据
  */
 export async function initAppDatabase(): Promise<AppRepositories> {
-  const db = await Database.load("sqlite:chainai.db");
+  const dataDir = await getAppDataDir();
+  // 数据随程序走：安装版首次启动，把旧位置的数据库迁移到安装目录
+  if (dataDir) {
+    await migrateLegacyDb(dataDir).catch(() => {});
+  }
+  const dbPath = dataDir ? `sqlite:${joinPath(dataDir, "chainai.db")}` : "sqlite:chainai.db";
+  const db = await Database.load(dbPath);
   const backend = new TauriSqlBackend(db);
   await initSchema(backend);
   return createRepositories(backend);
+}
+
+/**
+ * 一次性迁移：把旧位置（AppData/com.16576.chainai）的数据库复制到新数据目录
+ * - 目标已存在则跳过（幂等）
+ * - 同时迁移 WAL 文件（未 checkpoint 的数据）
+ * - 迁移失败静默（不阻断启动，新库从空开始）
+ */
+async function migrateLegacyDb(dataDir: string): Promise<void> {
+  const { appConfigDir } = await import("@tauri-apps/api/path");
+  const legacyDir = await appConfigDir();
+  if (joinPath(legacyDir) === joinPath(dataDir)) return; // 开发版同目录，无需迁移
+  const { invoke } = await import("@tauri-apps/api/core");
+  const legacyDb = joinPath(legacyDir, "chainai.db");
+  const targetDb = joinPath(dataDir, "chainai.db");
+  await invoke("copy_file", { src: legacyDb, dst: targetDb });
+  await invoke("copy_file", {
+    src: joinPath(legacyDir, "chainai.db-wal"),
+    dst: joinPath(dataDir, "chainai.db-wal"),
+  }).catch(() => {});
 }

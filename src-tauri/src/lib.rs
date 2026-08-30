@@ -16,6 +16,38 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// 复制文件（一次性数据迁移用；目标已存在则视为成功，幂等）
+#[tauri::command]
+fn copy_file(src: String, dst: String) -> Result<(), String> {
+    if std::path::Path::new(&dst).exists() {
+        return Ok(());
+    }
+    if let Some(parent) = std::path::Path::new(&dst).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 应用数据目录：
+/// - 安装版（release）：可执行文件所在目录（安装路径，数据随程序走）
+/// - 开发版（debug）：系统应用数据目录（避免 cargo clean 误删数据）
+#[tauri::command]
+fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
+    if cfg!(debug_assertions) {
+        app.path()
+            .app_config_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .map_err(|e| e.to_string())
+    } else {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .map(|d| d.to_string_lossy().to_string())
+            .ok_or_else(|| "无法确定可执行文件目录".to_string())
+    }
+}
+
 /// 写入文本文件（导出/便签用；自动创建父目录）
 #[tauri::command]
 fn write_text_file(path: String, content: String) -> Result<(), String> {
@@ -75,7 +107,9 @@ pub fn run() {
             write_text_file,
             append_text_file,
             delete_file,
-            write_binary_file
+            write_binary_file,
+            copy_file,
+            app_data_dir
         ])
         .setup(|app| {
             setup_tray(app)?;

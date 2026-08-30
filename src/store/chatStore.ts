@@ -7,6 +7,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
+import { getAppDataDir, joinPath } from "../core/io/appPaths";
 import { providerManager } from "../core/ai/manager";
 import { ChatError } from "../core/ai/errors";
 import type { ChatMessage } from "../core/ai/types";
@@ -943,8 +944,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!repos) return;
     try {
       const json = await exportAll(repos);
-      const doc = await documentDir();
-      const dir = await join(doc, "AITreeBackups");
+      // 备份目录：数据随程序走（安装版=安装目录/backups；开发版=文档/AITreeBackups）
+      const dataDir = await getAppDataDir();
+      const dir = dataDir
+        ? joinPath(dataDir, "backups")
+        : await join(await documentDir(), "AITreeBackups");
       const file = await join(
         dir,
         `tongtu-backup-${new Date().toISOString().slice(0, 10)}.json`

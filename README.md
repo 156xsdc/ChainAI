@@ -88,9 +88,18 @@ src/
 
 ## 💾 数据存储
 
-- 数据库：`chainai.db`（Tauri 应用数据目录）
-- 便签：`文档/AITreeNotes/`（可在设置中自定义目录）
-- 自动备份：`文档/AITreeBackups/`（默认每 3 天，可配置）
+**数据随程序走**：所有用户数据都存在应用所在目录下（安装版安装到哪里，数据就在哪里；卸载/重装/升级不丢数据）。
+
+| 类型 | 安装版（release） | 开发版（debug） |
+| --- | --- | --- |
+| 数据库 `chainai.db` | 安装目录下 | `%APPDATA%\com.16576.chainai\` |
+| 便签（Markdown） | 安装目录 `notes/` | `文档/AITreeNotes/` |
+| 自动备份（JSON） | 安装目录 `backups/` | `文档/AITreeBackups/` |
+| 错误日志 | 安装目录 `chainai-error.log` | `文档/chainai-error.log` |
+
+- 安装版首次启动会自动把旧位置（`%APPDATA%\com.16576.chainai\`）的数据库迁移到安装目录（一次性，幂等）
+- 便签目录可在「设置 → 便签存储」中自定义
+- 安装模式为 `currentUser`：默认安装到 `%LOCALAPPDATA%\tongtu`（无需管理员权限，目录可写）
 
 ## 📄 更多
 

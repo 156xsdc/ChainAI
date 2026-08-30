@@ -4,6 +4,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { documentDir, join } from "@tauri-apps/api/path";
+import { getAppDataDir, joinPath } from "../io/appPaths";
 import { newId } from "../db/util";
 import type { AppRepositories, Note } from "../db";
 
@@ -39,10 +40,12 @@ export async function noteFilePath(
   return segs.length > 0 ? join(dir, ...segs, fileName) : join(dir, fileName);
 }
 
-/** 便签存储目录（自定义或默认文档目录/AITreeNotes） */
+/** 便签存储目录（自定义优先；否则数据随程序走：安装版=安装目录/notes，开发版=文档/AITreeNotes） */
 export async function getNotesDir(repos: AppRepositories): Promise<string> {
   const custom = await repos.settings.get<string | null>("notes.storageDir", null);
   if (custom && custom.trim()) return custom.trim();
+  const dataDir = await getAppDataDir();
+  if (dataDir) return joinPath(dataDir, "notes");
   const doc = await documentDir();
   return join(doc, "AITreeNotes");
 }

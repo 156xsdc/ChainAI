@@ -2,6 +2,15 @@
 
 项目代号 ChainAI，产品名「通途」（学海无涯，大道通途）—— 树状对话 AI 桌面应用。
 
+## [0.0.1] - 2026-08-30 — 首个安装包与数据路径调整
+
+- 版本号统一为 0.0.1（package.json / tauri.conf.json / Cargo.toml）
+- 打包目标改为 NSIS（MSI 的 WiX 工具链不可用），生成 `tongtu_0.0.1_x64-setup.exe`
+- NSIS 安装模式 `currentUser`：默认安装到 `%LOCALAPPDATA%\tongtu`，无需管理员、目录可写
+- **数据随程序走**：数据库 / 便签 / 备份 / 日志全部存到安装目录（开发版仍用 AppData/文档）
+- 安装版首次启动自动把旧数据库（AppData）一次性迁移到安装目录（幂等）
+- 新增 `app_data_dir` / `copy_file` Rust 命令与 `core/io/appPaths` 路径模块
+
 ## [0.1.2] - 2026-08-30 — 第二轮排查与应用图标
 
 ### 修复

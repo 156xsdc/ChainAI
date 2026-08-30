@@ -210,10 +210,13 @@ class ErrorBoundary extends Component<
       try {
         const { documentDir } = await import("@tauri-apps/api/path");
         const { invoke } = await import("@tauri-apps/api/core");
-        const dir = await documentDir();
+        const { getAppDataDir, joinPath } = await import("./core/io/appPaths");
+        // 错误日志随数据目录（安装版=安装目录；开发版=文档）
+        const dataDir = await getAppDataDir();
+        const dir = dataDir ?? (await documentDir());
         const content = `[${new Date().toISOString()}]\n${error.message}\n${error.stack ?? ""}\n${JSON.stringify(info)}\n\n`;
         await invoke("append_text_file", {
-          path: `${dir}/chainai-error.log`,
+          path: joinPath(dir, "chainai-error.log"),
           content,
         });
       } catch {

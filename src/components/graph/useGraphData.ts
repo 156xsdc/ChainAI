@@ -44,6 +44,7 @@ export function useGraphData(): GraphData | null {
       const layout = computeGitLayout(nodes, edges, {
         laneWidth: 84,
         rowHeight: 52,
+        nodeWidth: 26,
       });
       // 加载节点分组（虚线框）
       const groupRows = await repos.groups.listGroups();

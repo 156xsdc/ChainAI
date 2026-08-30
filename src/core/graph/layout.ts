@@ -15,6 +15,8 @@ export interface LayoutOptions {
   laneWidth?: number;
   /** 行高（px） */
   rowHeight?: number;
+  /** 节点宽度（px，用于居中防重叠检测，默认 30） */
+  nodeWidth?: number;
 }
 
 export interface NodePosition {
@@ -37,6 +39,7 @@ export function computeGitLayout(
 ): GitLayoutResult {
   const laneWidth = options.laneWidth ?? 210;
   const rowHeight = options.rowHeight ?? 76;
+  const nodeWidth = options.nodeWidth ?? 30;
 
   const nodeSet = new Set(nodes.map((n) => n.id));
   const createdAt = new Map(nodes.map((n) => [n.id, n.createdAt]));
@@ -161,6 +164,39 @@ export function computeGitLayout(
     maxLane = Math.max(maxLane, lane);
     maxRow = Math.max(maxRow, r);
     positions.set(id, { x: lane * laneWidth, y: r * rowHeight, lane, row: r });
+  }
+
+  // ---- 4. 居中调整：父节点水平居中于其直接子节点 ----
+  // 自底向上处理，父节点 x = 子节点 x 均值；若与同层其他节点冲突则保持原位置
+  const byRow = new Map<number, string[]>();
+  for (const [id, pos] of positions) {
+    const list = byRow.get(pos.row);
+    if (list) list.push(id);
+    else byRow.set(pos.row, [id]);
+  }
+  const sortedRows = [...byRow.keys()].sort((a, b) => b - a);
+  for (const r of sortedRows) {
+    const rowIds = byRow.get(r)!;
+    for (const id of rowIds) {
+      const kids = childrenOf.get(id) ?? [];
+      if (kids.length === 0) continue;
+      const kidPositions = kids
+        .map((k) => positions.get(k))
+        .filter((p): p is NodePosition => !!p);
+      if (kidPositions.length === 0) continue;
+      const centerX =
+        kidPositions.reduce((sum, p) => sum + p.x, 0) / kidPositions.length;
+      // 防重叠：同层其他节点距中心过近则不调整
+      const conflict = rowIds.some((o) => {
+        if (o === id) return false;
+        const op = positions.get(o)!;
+        return Math.abs(op.x - centerX) < nodeWidth;
+      });
+      if (!conflict) {
+        const cur = positions.get(id)!;
+        positions.set(id, { ...cur, x: centerX });
+      }
+    }
   }
 
   return {

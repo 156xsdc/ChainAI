@@ -139,4 +139,37 @@ describe("computeGitLayout", () => {
     expect(positions.get("ns")!.row).toBeGreaterThan(positions.get("r")!.row);
     expect(positions.get("ns1")!.row).toBeGreaterThan(positions.get("ns")!.row);
   });
+
+  it("父节点水平居中于其直接子节点", () => {
+    // 根 → A, B, C（三个子节点，不同轨道）
+    const nodes = [
+      node("root", "t0"),
+      node("A", "t1"),
+      node("B", "t2"),
+      node("C", "t3"),
+    ];
+    const edges = [edge("root", "A"), edge("root", "B"), edge("root", "C")];
+    const { positions } = computeGitLayout(nodes, edges, {
+      laneWidth: 100,
+      nodeWidth: 26,
+    });
+
+    const kids = ["A", "B", "C"].map((k) => positions.get(k)!);
+    const centerX = kids.reduce((s, p) => s + p.x, 0) / kids.length;
+    const root = positions.get("root")!;
+    // 无冲突时 root 居中于子节点
+    expect(Math.abs(root.x - centerX)).toBeLessThan(1);
+    // 子节点平均分布（不同轨道）
+    const xs = kids.map((k) => k.x);
+    expect(xs[1] - xs[0]).toBeCloseTo(xs[2] - xs[1], 5);
+  });
+
+  it("居中不与同层节点冲突时保持（链式结构）", () => {
+    // 线性链：每个节点只有一个子 → 不触发居中调整，保持原轨道
+    const nodes = [node("r", "t0"), node("a", "t1"), node("b", "t2")];
+    const edges = [edge("r", "a"), edge("a", "b")];
+    const { positions } = computeGitLayout(nodes, edges, { nodeWidth: 26 });
+    expect(positions.get("r")!.x).toBe(positions.get("a")!.x);
+    expect(positions.get("a")!.x).toBe(positions.get("b")!.x);
+  });
 });

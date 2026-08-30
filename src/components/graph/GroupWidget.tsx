@@ -69,12 +69,6 @@ export function GroupWidget({ data }: NodeProps<GroupFlowNode>) {
         </span>
       </span>
 
-      {/* 总结：hover 悬浮显示 */}
-      {group.summary && (
-        <span className="pointer-events-none absolute left-2 right-2 top-6 line-clamp-3 text-[9px] leading-4 text-neutral-400 opacity-0 transition-opacity group-hover:opacity-100">
-          {group.summary}
-        </span>
-      )}
     </div>
   );
 }

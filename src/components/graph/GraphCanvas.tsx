@@ -198,18 +198,6 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     bumpGraphVersion();
   };
 
-  const editGroupSummary = async (group: NodeGroup) => {
-    if (!repos) return;
-    const text = await promptDialog({
-      title: "编辑分组总结",
-      defaultValue: group.summary,
-      placeholder: "总结内容（Markdown）",
-    });
-    if (text === null) return;
-    await repos.groups.updateGroup(group.id, { summary: text.trim() });
-    bumpGraphVersion();
-  };
-
   /** 导出画布为 PNG（html-to-image） */
   const exportPng = async (allNodes: FlowNode[]) => {
     if (!containerRef.current) return;
@@ -453,7 +441,6 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           >
             <GroupMenuItem label="重命名" onClick={() => renameGroup(groupMenu.group)} />
             <GroupMenuItem label="修改颜色" onClick={() => recolorGroup(groupMenu.group)} />
-            <GroupMenuItem label="编辑总结（手动）" onClick={() => editGroupSummary(groupMenu.group)} />
             <GroupMenuItem
               label={groupMenu.group.collapsed ? "展开分组" : "折叠分组"}
               onClick={() => toggleGroup(groupMenu.group.id)}

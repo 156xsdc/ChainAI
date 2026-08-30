@@ -2,8 +2,8 @@
  * 右侧便签板：Markdown 便签的列表 / 编辑 / 自动保存
  * 内容存独立 .md 文件，元数据存 SQLite
  */
-import { useEffect, useRef, useState } from "react";
-import { ChevronsRight, CornerUpRight, Plus, StickyNote, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronsRight, CornerUpRight, Folder, Plus, StickyNote, Trash2 } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
 
@@ -11,6 +11,7 @@ const MIN_W = 220;
 const MAX_W = 420;
 import {
   deleteNoteFile,
+  moveNoteFile,
   readNoteContent,
   writeNoteContent,
 } from "../../core/notes/noteService";
@@ -30,6 +31,7 @@ export function RightSidebar() {
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#fafafa");
   const [tagsText, setTagsText] = useState("");
+  const [category, setCategory] = useState("");
   const [width, setWidth] = useState(280);
   const widthRef = useRef(width);
   const dragRef = useRef(false);
@@ -85,7 +87,32 @@ export function RightSidebar() {
     setTitle(note.title);
     setColor(note.color);
     setTagsText(note.tags.join(", "));
+    setCategory(note.category);
     setContent(await readNoteContent(repos!, note));
+  };
+
+  // 按分类子目录分组（目录结构显示）
+  const groups = useMemo(() => {
+    const map = new Map<string, Note[]>();
+    for (const n of notes) {
+      const key = n.category || "";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(n);
+    }
+    return [...map.entries()]
+      .map(([cat, items]) => ({ category: cat, items }))
+      .sort((a, b) =>
+        a.category === "" ? 1 : b.category === "" ? -1 : a.category.localeCompare(b.category)
+      );
+  }, [notes]);
+
+  /** 分类变更：移动文件 + 更新记录 */
+  const handleCategoryChange = async (v: string) => {
+    setCategory(v);
+    const note = notes.find((n) => n.id === selectedId);
+    if (!note || !repos) return;
+    await moveNoteFile(repos, note, v);
+    void loadNotes();
   };
 
   // 自动保存（防抖）
@@ -181,31 +208,43 @@ export function RightSidebar() {
         )}
 
         {!selected &&
-          notes.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => void selectNote(n)}
-              className="mb-1.5 flex w-full items-start gap-2 rounded-xl border border-neutral-200 px-2.5 py-2 text-left hover:border-neutral-300 hover:shadow-sm"
-              style={{ background: n.color }}
-            >
-              <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full" style={{ background: "#b0b0b0" }} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-medium text-neutral-800">
-                  {n.title || "未命名便签"}
-                </span>
-                <span className="mt-0.5 block truncate text-[10px] text-neutral-400">
-                  {n.tags.length > 0 ? `#${n.tags.join(" #")}` : new Date(n.updatedAt).toLocaleString()}
-                </span>
-              </span>
-              {n.nodeId && (
-                <span
-                  className="shrink-0 rounded bg-neutral-200/60 px-1 text-[9px] text-neutral-500"
-                  title="已关联对话节点"
-                >
-                  节点
-                </span>
-              )}
-            </button>
+          groups.map(({ category: cat, items }) => (
+            <div key={cat || "__root__"} className="mb-2">
+              {/* 目录分组头（文件结构） */}
+              <div className="flex items-center gap-1 px-1.5 pb-1 pt-0.5 text-[10px] text-neutral-400">
+                <Folder size={9} />
+                {cat ? `AITreeNotes/${cat}` : "AITreeNotes（根目录）"}
+                <span className="text-neutral-300">({items.length})</span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {items.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => void selectNote(n)}
+                    className="flex w-full items-start gap-2 rounded-xl border border-neutral-200 px-2.5 py-2 text-left hover:border-neutral-300 hover:shadow-sm"
+                    style={{ background: n.color }}
+                  >
+                    <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full" style={{ background: "#b0b0b0" }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium text-neutral-800">
+                        {n.title || "未命名便签"}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[10px] text-neutral-400">
+                        {n.tags.length > 0 ? `#${n.tags.join(" #")}` : new Date(n.updatedAt).toLocaleString()}
+                      </span>
+                    </span>
+                    {n.nodeId && (
+                      <span
+                        className="shrink-0 rounded bg-neutral-200/60 px-1 text-[9px] text-neutral-500"
+                        title="已关联对话节点"
+                      >
+                        节点
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
       </div>
 
@@ -255,6 +294,17 @@ export function RightSidebar() {
               onChange={(e) => handleTagsChange(e.target.value)}
               className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
               placeholder="标签（逗号分隔）"
+            />
+          </div>
+
+          {/* 分类子目录（移动文件到子目录） */}
+          <div className="flex items-center gap-1.5 px-3 pb-1.5">
+            <Folder size={11} className="shrink-0 text-neutral-300" />
+            <input
+              value={category}
+              onChange={(e) => void handleCategoryChange(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
+              placeholder="分类子目录（如：项目A，留空=根目录）"
             />
           </div>
 

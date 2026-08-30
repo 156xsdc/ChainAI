@@ -41,6 +41,14 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   for (const sql of SCHEMA_SQL) {
     await db.execute(sql);
   }
+  // 兼容旧库：notes 表补充 category 列（已存在则忽略）
+  try {
+    await db.execute(
+      `ALTER TABLE notes ADD COLUMN category TEXT NOT NULL DEFAULT ''`
+    );
+  } catch {
+    // 列已存在
+  }
 }
 
 /** 创建完整的仓库集合（传入已建表的 backend） */

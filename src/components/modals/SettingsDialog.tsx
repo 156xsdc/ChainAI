@@ -4,10 +4,12 @@
  * 持久化到 settings('ai.providers')
  */
 import { useEffect, useState } from "react";
-import { Check, Download, Plus, RefreshCw, Trash2, Upload, Trash } from "lucide-react";
+import { Check, Download, FolderOpen, Plus, RefreshCw, Trash2, Upload, Trash } from "lucide-react";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig, ProviderId } from "../../core/ai/types";
 import { useChatStore } from "../../store/chatStore";
+import { chooseDirectory } from "../../core/io/files";
+import { getNotesDir } from "../../core/notes/noteService";
 import { Modal } from "../common/Modal";
 import { RecycleBinDialog } from "./RecycleBinDialog";
 
@@ -60,6 +62,7 @@ export function SettingsDialog({
   const [notifyDuration, setNotifyDuration] = useState(6);
   const [notifySuccess, setNotifySuccess] = useState(true);
   const [notifyInfo, setNotifyInfo] = useState(true);
+  const [notesDir, setNotesDir] = useState("");
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
 
   useEffect(() => {
@@ -106,8 +109,23 @@ export function SettingsDialog({
           setNotifySuccess(s.types?.success !== false);
           setNotifyInfo(s.types?.info !== false);
         });
+      // 加载便签存储目录
+      const cs = useChatStore.getState();
+      if (cs.repos) void getNotesDir(cs.repos).then(setNotesDir);
     }
   }, [open]);
+
+  /** 保存便签存储目录 */
+  const saveNotesDir = (dir: string) => {
+    const cs = useChatStore.getState();
+    cs.repos?.settings.set("notes.storageDir", dir.trim() || null);
+    setNotesDir(dir.trim() || (cs.repos ? "" : ""));
+  };
+
+  const pickNotesDir = async () => {
+    const dir = await chooseDirectory();
+    if (dir) saveNotesDir(dir);
+  };
 
   /** 保存通知设置（写库 + 更新 store 缓存） */
   const saveNotification = (
@@ -295,6 +313,32 @@ export function SettingsDialog({
             </div>
             <div className="text-[10px] text-neutral-400">
               错误通知始终显示，不在此控制
+            </div>
+          </div>
+        </div>
+
+        {/* 便签存储 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 text-xs text-neutral-500">便签存储</div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <input
+                className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-[11px] text-neutral-600 outline-none focus:border-neutral-400"
+                value={notesDir}
+                onChange={(e) => saveNotesDir(e.target.value)}
+                placeholder="便签目录（默认 文档/AITreeNotes）"
+              />
+              <button
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[11px] text-neutral-600 hover:bg-neutral-100"
+                onClick={() => void pickNotesDir()}
+                title="选择目录"
+              >
+                <FolderOpen size={12} /> 选择
+              </button>
+            </div>
+            <div className="text-[10px] leading-relaxed text-neutral-400">
+              便签以独立 Markdown 文件存储于此目录；在便签板中设置"分类"可创建子目录。
+              修改路径后，新便签写入新位置（已有便签文件不自动迁移）。
             </div>
           </div>
         </div>

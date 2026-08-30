@@ -55,6 +55,14 @@ export async function openTextFile(filters: {
   return { path: path as string, content };
 }
 
+/** 选择目录（返回路径，取消返回 null） */
+export async function chooseDirectory(): Promise<string | null> {
+  if (!inTauri) return null;
+  const path = await open({ directory: true, multiple: false });
+  if (!path || Array.isArray(path)) return null;
+  return path as string;
+}
+
 /** 保存 PNG 文件（base64 内容） */
 export async function savePngFile(
   defaultName: string,

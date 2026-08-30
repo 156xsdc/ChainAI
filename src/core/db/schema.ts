@@ -85,6 +85,7 @@ export const SCHEMA_SQL: string[] = [
     id         TEXT PRIMARY KEY,
     title      TEXT NOT NULL DEFAULT '',
     file_path  TEXT NOT NULL DEFAULT '',
+    category   TEXT NOT NULL DEFAULT '',
     color      TEXT NOT NULL DEFAULT '#fafafa',
     node_id    TEXT REFERENCES nodes(id) ON DELETE SET NULL,
     tags       TEXT NOT NULL DEFAULT '[]',

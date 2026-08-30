@@ -120,6 +120,7 @@ export interface NoteRow {
   id: string;
   title: string;
   file_path: string;
+  category: string;
   color: string;
   node_id: string | null;
   tags: string; // JSON 数组字符串
@@ -131,6 +132,8 @@ export interface Note {
   id: string;
   title: string;
   filePath: string;
+  /** 分类子目录名（空 = 根目录） */
+  category: string;
   color: string;
   nodeId: string | null;
   tags: string[];

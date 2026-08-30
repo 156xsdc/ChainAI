@@ -172,4 +172,38 @@ describe("computeGitLayout", () => {
     expect(positions.get("r")!.x).toBe(positions.get("a")!.x);
     expect(positions.get("a")!.x).toBe(positions.get("b")!.x);
   });
+
+  it("分叉处垂直间距 = 2 × 线性间距", () => {
+    // 线性链 r→a→b：间距 rowHeight
+    // 分叉 r→c1,c2：r 到 c1/c2 间距 = 2 × rowHeight
+    const ROW = 60;
+    const nodes = [
+      node("r", "t0"),
+      node("a", "t1"),
+      node("b", "t2"),
+      node("c1", "t1"),
+      node("c2", "t2"),
+    ];
+    const edges = [
+      edge("r", "a"),
+      edge("a", "b"),
+      edge("r", "c1"),
+      edge("c1", "c2"),
+    ];
+    const { positions } = computeGitLayout(nodes, edges, {
+      rowHeight: ROW,
+      nodeWidth: 26,
+    });
+
+    const gap = (a: string, b: string) =>
+      Math.abs(positions.get(a)!.y - positions.get(b)!.y);
+    // 线性：r→a 与 a→b 都是 rowHeight（r 有分叉 → r→a 是 2×？）
+    // r 有多个子（a 和 c1）→ r 到子节点间距 = 2 × ROW
+    expect(gap("r", "a")).toBe(ROW * 2);
+    expect(gap("r", "c1")).toBe(ROW * 2);
+    // a 只有 b 一个子 → a→b = ROW
+    expect(gap("a", "b")).toBe(ROW);
+    // c1 只有 c2 一个子 → c1→c2 = ROW
+    expect(gap("c1", "c2")).toBe(ROW);
+  });
 });

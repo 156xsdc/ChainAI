@@ -155,15 +155,32 @@ export function computeGitLayout(
   }
 
   // ---- 3. 生成位置 ----
+  // 按层计算 y：同层节点共享 y；若该层任一节点有多个子节点（分叉），
+  // 则到下一层的垂直间距 = 2 × 线性间距（给曲线散开留空间）
   const positions = new Map<string, NodePosition>();
   let maxLane = 0;
-  let maxRow = 0;
+  const maxRow = Math.max(0, ...rowOf.values());
+  const layerY = new Map<number, number>();
+  let y = 0;
+  for (let layer = 0; layer <= maxRow; layer++) {
+    layerY.set(layer, y);
+    const layerNodes = topoOrder.filter((id) => rowOf.get(id) === layer);
+    const hasBranch = layerNodes.some(
+      (id) => (childrenOf.get(id) ?? []).length > 1
+    );
+    y += hasBranch ? rowHeight * 2 : rowHeight;
+  }
+
   for (const id of topoOrder) {
     const lane = laneOf.get(id) ?? 0;
     const r = rowOf.get(id) ?? 0;
     maxLane = Math.max(maxLane, lane);
-    maxRow = Math.max(maxRow, r);
-    positions.set(id, { x: lane * laneWidth, y: r * rowHeight, lane, row: r });
+    positions.set(id, {
+      x: lane * laneWidth,
+      y: layerY.get(r) ?? 0,
+      lane,
+      row: r,
+    });
   }
 
   // ---- 4. 居中调整：父节点水平居中于其直接子节点 ----
@@ -202,6 +219,6 @@ export function computeGitLayout(
   return {
     positions,
     width: (maxLane + 1) * laneWidth,
-    height: (maxRow + 1) * rowHeight,
+    height: y,
   };
 }

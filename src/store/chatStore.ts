@@ -476,7 +476,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (typewriter) typewriter.finish();
       const finalAnswer = typewriter ? typewriter.fullText : answer;
       if (finalAnswer) {
-        await repos.nodes.updateNode(nodeId, { answer: finalAnswer });
+        // 首次生成：写入版本1（重新生成/版本切换的基础）
+        const versions = await repos.answerVersions.list(nodeId);
+        if (versions.length === 0) {
+          await repos.answerVersions.add(nodeId, finalAnswer);
+          await repos.nodes.updateNode(nodeId, {
+            answer: finalAnswer,
+            answerVersion: 1,
+          });
+        } else {
+          await repos.nodes.updateNode(nodeId, { answer: finalAnswer });
+        }
         set((s) => {
           const buffer = { ...s.streamingBuffer };
           delete buffer[nodeId];
@@ -804,6 +814,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const controller = new AbortController();
     streamController = controller;
     set({ streaming: true });
+    // 立即清空旧内容显示（避免旧回答一直显示到新内容生成完）
+    set((s) => ({
+      streamingBuffer: { ...s.streamingBuffer, [nodeId]: "" },
+    }));
     let answer = "";
     let lastRender = 0;
     const updateBuffer = (text: string) => {
@@ -830,6 +844,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } finally {
       streamController = null;
       if (answer) {
+        // 迁移旧答案为版本1（历史数据可能没有版本记录）
+        const versions = await repos.answerVersions.list(nodeId);
+        if (versions.length === 0 && node.answer) {
+          await repos.answerVersions.add(nodeId, node.answer);
+        }
         const newVersion = await repos.answerVersions.add(nodeId, answer);
         await repos.nodes.updateNode(nodeId, {
           answer,

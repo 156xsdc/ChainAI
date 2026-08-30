@@ -45,6 +45,10 @@ export type ChatStreamItem =
       role: "user" | "assistant";
       nodeId: string;
       content: string;
+      /** 是否已收藏（用于消息操作条显示状态） */
+      isFavorited?: boolean;
+      /** 是否已保留标记 */
+      isKept?: boolean;
     }
   | { kind: "branch"; parentNodeId: string; children: BranchOption[] };
 
@@ -226,6 +230,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           role: "assistant",
           nodeId: node.id,
           content: streamed ?? node.answer,
+          isFavorited: node.isFavorited,
+          isKept: node.isKept,
         });
       }
       // 分叉点：该节点有多个子节点时显示分支提示线

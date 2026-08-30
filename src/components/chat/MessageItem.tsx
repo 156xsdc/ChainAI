@@ -1,8 +1,11 @@
 /**
  * 单条消息：用户（浅灰气泡）/ AI（Markdown 全文）
+ * AI 消息 hover 时底部弹出操作条：复制 Markdown / 收藏
  */
 import { memo, type CSSProperties } from "react";
+import { Copy, Star } from "lucide-react";
 import type { ChatStreamItem } from "../../store/chatStore";
+import { useChatStore } from "../../store/chatStore";
 import { Markdown } from "./Markdown";
 
 interface MessageItemProps {
@@ -16,6 +19,10 @@ export const MessageItem = memo(function MessageItem({
   isStreaming,
   onContextMenu,
 }: MessageItemProps) {
+  const repos = useChatStore((s) => s.repos);
+  const toggleFavorite = useChatStore((s) => s.toggleFavorite);
+  const setNotice = useChatStore((s) => s.setNotice);
+
   if (item.role === "user") {
     return (
       <div
@@ -32,20 +39,47 @@ export const MessageItem = memo(function MessageItem({
     );
   }
 
+  const handleCopyMarkdown = async () => {
+    const node = await repos?.nodes.getNode(item.nodeId);
+    const text = node?.answer ?? item.content;
+    await navigator.clipboard.writeText(text);
+    setNotice("📋 已复制 Markdown 原文");
+  };
+
   return (
     <div
-      className="group/msg"
+      className="group/msg relative"
       onContextMenu={(e) => onContextMenu(e, item.nodeId)}
     >
       {isStreaming ? (
         // 流式期间用纯文本渲染（省 CPU），结束后统一渲染 Markdown
-        <div className="text-[13.5px] leading-7 text-neutral-800 whitespace-pre-wrap">
+        <div className="whitespace-pre-wrap text-[13.5px] leading-7 text-neutral-800">
           {item.content}
           <StreamingCursor />
         </div>
       ) : (
         <Markdown content={item.content} />
       )}
+
+      {/* hover 底部操作条 */}
+      <div className="pointer-events-none absolute -bottom-3 right-0 z-10 flex items-center gap-0.5 rounded-full border border-neutral-200 bg-white px-1 py-0.5 opacity-0 shadow-sm transition-opacity group-hover/msg:pointer-events-auto group-hover/msg:opacity-100">
+        <button
+          className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+          title="复制为 Markdown"
+          onClick={() => void handleCopyMarkdown()}
+        >
+          <Copy size={12} />
+        </button>
+        <button
+          className={`flex h-6 w-6 items-center justify-center rounded-full hover:bg-neutral-100 ${
+            item.isFavorited ? "text-amber-500" : "text-neutral-400 hover:text-neutral-700"
+          }`}
+          title={item.isFavorited ? "取消收藏" : "收藏"}
+          onClick={() => void toggleFavorite(item.nodeId)}
+        >
+          <Star size={12} fill={item.isFavorited ? "currentColor" : "none"} />
+        </button>
+      </div>
     </div>
   );
 });

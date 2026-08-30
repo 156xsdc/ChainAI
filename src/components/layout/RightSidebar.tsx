@@ -77,7 +77,9 @@ export function RightSidebar() {
     const startW = width;
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
-      setWidth(Math.min(MAX_W, Math.max(MIN_W, startW + (startX - ev.clientX))));
+      const next = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - ev.clientX)));
+      widthRef.current = next; // 同步 ref，避免 mouseup 时读到滞后值
+      setWidth(next);
     };
     const onUp = () => {
       dragRef.current = false;

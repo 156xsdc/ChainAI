@@ -6,6 +6,7 @@
  * 1. Markdown 导入的节点应归属当前树（tree_id 不应为 NULL，否则树状图不可见）
  * 2. 清空一棵树的对话不应删除其他树的会话
  * 3. 回收站恢复中间节点不应产生孤儿节点
+ * 4. 同一节点重复收藏不应产生重复记录
  */
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "./helpers";
@@ -76,5 +77,17 @@ describe("多树场景", () => {
     // 恢复后 n2 仍应通过边连接到活跃节点（不应是孤立点）
     const edges = await repos.nodes.getAllActiveEdges(tree.id);
     expect(edges.length).toBeGreaterThan(0);
+  });
+
+  it("同一节点重复收藏不应产生重复记录", async () => {
+    const repos = await createTestDb();
+    const node = await repos.nodes.createNode({ question: "测试" });
+
+    // 重复调用 add（如数据不同步时再次收藏）
+    await repos.favorites.add(node.id);
+    await repos.favorites.add(node.id);
+
+    const favs = await repos.favorites.getAll();
+    expect(favs).toHaveLength(1);
   });
 });

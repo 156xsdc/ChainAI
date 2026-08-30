@@ -41,6 +41,7 @@ export function FavoritesPanel() {
     const onMove = (ev: MouseEvent) => {
       if (!dragging.current) return;
       const next = Math.min(MAX_W, Math.max(MIN_W, startW + (ev.clientX - startX)));
+      widthRef.current = next; // 同步 ref，避免 mouseup 时读到滞后值
       setLeftPanelWidth(next);
     };
     const onUp = () => {

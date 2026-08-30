@@ -1,7 +1,7 @@
 /**
  * 颜色选择对话框：预设淡色板（轻量风格）+ 自定义 HEX/rgba 输入
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
 
 /** 预设色板：淡色、亮色系（符合"轻"的主旨） */
@@ -36,6 +36,11 @@ export function ColorDialog({
   onConfirm,
 }: ColorDialogProps) {
   const [custom, setCustom] = useState(value || "");
+
+  // 对话框重开/切换目标时同步自定义输入（useState 只在首次挂载初始化）
+  useEffect(() => {
+    setCustom(value || "");
+  }, [value]);
 
   const apply = (color: string) => {
     onConfirm(color);

@@ -77,7 +77,8 @@ export const SCHEMA_SQL: string[] = [
     node_id    TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     group_id   TEXT REFERENCES favorite_groups(id) ON DELETE SET NULL,
     note       TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(node_id)
   )`,
 
   // 节点分组（虚线框，支持嵌套3级）

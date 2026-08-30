@@ -22,7 +22,7 @@ export function NewStartDialog({ open, onClose, parentNodeId }: NewStartDialogPr
     const parentId = parentNodeId ?? currentNodeId;
     if (!parentId || busy) return;
     setBusy(true);
-    await createNewStart(parentId);
+    await createNewStart(parentId, name.trim() || undefined);
     setBusy(false);
     setName("");
     onClose();

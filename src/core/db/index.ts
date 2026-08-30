@@ -80,6 +80,18 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 忽略
   }
+  // 收藏唯一性迁移：清理历史重复收藏（保留最早一条）+ 唯一索引
+  // （旧库可能已存在重复；新库由建表 UNIQUE(node_id) 保证）
+  try {
+    await db.execute(
+      `DELETE FROM favorites WHERE id NOT IN (SELECT MIN(id) FROM favorites GROUP BY node_id)`
+    );
+    await db.execute(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_favorites_node ON favorites(node_id)`
+    );
+  } catch {
+    // 忽略（索引已存在等）
+  }
   // 默认树：无树时创建；旧节点归入默认树
   const treeRows = await db.select<{ id: string }>(`SELECT id FROM trees LIMIT 1`);
   if (treeRows.length === 0) {

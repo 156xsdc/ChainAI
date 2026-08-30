@@ -96,7 +96,7 @@ interface ChatState {
   /** @returns 是否已受理（false = 未创建节点，如未配置AI/创建失败） */
   sendMessage: (text: string) => Promise<boolean>;
   createBranch: (parentNodeId: string, params?: CreateBranchParams) => Promise<string>;
-  createNewStart: (parentNodeId: string) => Promise<string>;
+  createNewStart: (parentNodeId: string, name?: string) => Promise<string>;
   createMerge: (
     parentNodeIds: string[],
     params?: { name?: string; inheritCount?: number }
@@ -508,10 +508,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return node.id;
   },
 
-  createNewStart: async (parentNodeId) => {
+  createNewStart: async (parentNodeId, name) => {
     const { treeService } = get();
     if (!treeService) return "";
-    const { node } = await treeService.createNewStart(parentNodeId);
+    const { node } = await treeService.createNewStart(parentNodeId, { name });
     await get().navigateTo(node.id);
     return node.id;
   },

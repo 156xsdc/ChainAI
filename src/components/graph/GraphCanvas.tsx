@@ -27,7 +27,6 @@ import { useGraphData } from "./useGraphData";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { confirmDialog, promptDialog } from "../../store/dialogStore";
 import { ColorDialog } from "../common/ColorDialog";
-import { summarizeNodeGroup } from "../../core/context/aiSummarizer";
 import { savePngFile } from "../../core/io/files";
 import { MergeDialog } from "../modals/MergeDialog";
 import { GraphNodeMenu } from "./GraphNodeMenu";
@@ -197,22 +196,6 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     await repos?.groups.deleteGroup(group.id);
     setNotice("🗑️ 已删除分组");
     bumpGraphVersion();
-  };
-
-  const aiSummarizeGroup = async (group: NodeGroup) => {
-    if (!repos || !data) return;
-    setNotice("🤖 正在生成分组总结...");
-    const memberIds =
-      data.groups.find((g) => g.group.id === group.id)?.memberIds ?? [];
-    const summary = await summarizeNodeGroup(repos, memberIds);
-    if (summary) {
-      await repos.groups.updateGroup(group.id, { summary });
-      setNotice("✅ 已生成分组总结（折叠分组可查看）");
-      bumpGraphVersion();
-    } else {
-      setUiError("总结生成失败：请检查 AI 配置后重试");
-    }
-    setGroupMenu(null);
   };
 
   const editGroupSummary = async (group: NodeGroup) => {
@@ -470,8 +453,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           >
             <GroupMenuItem label="重命名" onClick={() => renameGroup(groupMenu.group)} />
             <GroupMenuItem label="修改颜色" onClick={() => recolorGroup(groupMenu.group)} />
-            <GroupMenuItem label="🤖 AI 总结" onClick={() => void aiSummarizeGroup(groupMenu.group)} />
-            <GroupMenuItem label="编辑总结" onClick={() => editGroupSummary(groupMenu.group)} />
+            <GroupMenuItem label="编辑总结（手动）" onClick={() => editGroupSummary(groupMenu.group)} />
             <GroupMenuItem
               label={groupMenu.group.collapsed ? "展开分组" : "折叠分组"}
               onClick={() => toggleGroup(groupMenu.group.id)}

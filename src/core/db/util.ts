@@ -18,6 +18,7 @@ export function now(): string {
 export function rowToNode(row: NodeRow): TreeNode {
   return {
     id: row.id,
+    treeId: row.tree_id ?? null,
     question: row.question,
     answer: row.answer,
     type: row.type,

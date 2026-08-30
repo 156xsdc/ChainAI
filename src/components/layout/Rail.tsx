@@ -1,7 +1,9 @@
 /**
- * 极窄侧栏（36px），延伸至窗口底部，仅底部一个展开按钮
+ * 极窄栏（40px）
+ * - 左侧：图标工具栏（树状图 / 收藏，点击弹出对应面板，互斥）
+ * - 右侧：便签板展开按钮
  */
-import { Menu } from "lucide-react";
+import { Menu, Star, TreePine } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 
 interface RailProps {
@@ -9,24 +11,69 @@ interface RailProps {
 }
 
 export function Rail({ side }: RailProps) {
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+  const setSidebar = useUIStore((s) => s.setSidebar);
+  const leftPanel = useUIStore((s) => s.leftPanel);
+  const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
   const isLeft = side === "left";
 
+  if (isLeft) {
+    return (
+      <div className="flex w-[40px] shrink-0 flex-col items-center border-r border-neutral-200 bg-neutral-50">
+        <div className="flex-1" />
+        <div className="mb-3 flex flex-col items-center gap-1.5">
+          <RailIcon
+            icon={<TreePine size={16} strokeWidth={1.6} />}
+            title="树状图"
+            active={leftPanel === "graph"}
+            onClick={() => toggleLeftPanel("graph")}
+          />
+          <RailIcon
+            icon={<Star size={16} strokeWidth={1.6} />}
+            title="收藏"
+            active={leftPanel === "favorites"}
+            onClick={() => toggleLeftPanel("favorites")}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className={`flex w-[36px] shrink-0 flex-col items-center border-neutral-200 bg-neutral-50 ${
-        isLeft ? "border-r" : "border-l"
-      }`}
-    >
-      {/* 顶部占位，按钮固定在底部 */}
+    <div className="flex w-[40px] shrink-0 flex-col items-center border-l border-neutral-200 bg-neutral-50">
       <div className="flex-1" />
       <button
-        title={isLeft ? "展开侧边栏 (Ctrl+B)" : "展开便签板 (Ctrl+Shift+N)"}
+        title="展开便签板 (Ctrl+Shift+N)"
         className="mb-2 rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600"
-        onClick={() => toggleSidebar(side)}
+        onClick={() => setSidebar("right", !useUIStore.getState().rightExpanded)}
       >
         <Menu size={16} strokeWidth={1.5} />
       </button>
     </div>
+  );
+}
+
+function RailIcon({
+  icon,
+  title,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className={`rounded-lg p-2 transition-colors ${
+        active
+          ? "bg-neutral-800 text-white"
+          : "text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+      }`}
+    >
+      {icon}
+    </button>
   );
 }

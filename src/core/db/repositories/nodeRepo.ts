@@ -18,6 +18,8 @@ export interface CreateNodeInput {
   type?: NodeType;
   summary?: string;
   color?: string;
+  /** 所属树（默认 null = 迁移兼容） */
+  treeId?: string | null;
 }
 
 export interface EdgeWithParent extends TreeEdge {
@@ -41,10 +43,11 @@ export class NodeRepository {
     const id = newId();
     const ts = now();
     await this.db.execute(
-      `INSERT INTO nodes (id, question, answer, type, summary, color, is_kept, is_favorited, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)`,
+      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)`,
       [
         id,
+        input.treeId ?? null,
         input.question ?? "",
         input.answer ?? "",
         input.type ?? "normal",
@@ -313,7 +316,8 @@ export class NodeRepository {
       const placeholders = ids.map(() => "?").join(",");
       const edgeRows = await this.db.select<import("../types").EdgeRow>(
         `SELECT * FROM edges
-         WHERE parent_id IN (${placeholders}) AND child_id IN (${placeholders})`,
+         WHERE parent_id IN (${placeholders}) AND child_id IN (${placeholders})
+         ORDER BY created_at ASC, rowid ASC`,
         [...ids, ...ids]
       );
       edges = edgeRows.map(rowToEdge);
@@ -321,36 +325,58 @@ export class NodeRepository {
     return { nodes: nodeRows.map(rowToNode), edges };
   }
 
-  /** 全部活跃节点（树状图全局视图用） */
-  async getAllActive(): Promise<TreeNode[]> {
-    const rows = await this.db.select<NodeRow>(
-      `SELECT * FROM nodes WHERE is_active = 1 ORDER BY created_at ASC, rowid ASC`
-    );
+  /** 全部活跃节点（可限定树） */
+  async getAllActive(treeId?: string | null): Promise<TreeNode[]> {
+    const rows = treeId
+      ? await this.db.select<NodeRow>(
+          `SELECT * FROM nodes WHERE is_active = 1 AND tree_id = ? ORDER BY created_at ASC, rowid ASC`,
+          [treeId]
+        )
+      : await this.db.select<NodeRow>(
+          `SELECT * FROM nodes WHERE is_active = 1 ORDER BY created_at ASC, rowid ASC`
+        );
     return rows.map(rowToNode);
   }
 
-  /** 关键词搜索节点（问题/回答/摘要），按更新时间倒序 */
-  async search(keyword: string, limit = 50): Promise<TreeNode[]> {
+  /** 关键词搜索节点（问题/回答/摘要），按更新时间倒序（可限定树） */
+  async search(keyword: string, limit = 50, treeId?: string | null): Promise<TreeNode[]> {
     const like = `%${keyword}%`;
-    const rows = await this.db.select<NodeRow>(
-      `SELECT * FROM nodes
-       WHERE is_active = 1 AND (question LIKE ? OR answer LIKE ? OR summary LIKE ?)
-       ORDER BY updated_at DESC, rowid DESC
-       LIMIT ?`,
-      [like, like, like, limit]
-    );
+    const rows = treeId
+      ? await this.db.select<NodeRow>(
+          `SELECT * FROM nodes
+           WHERE is_active = 1 AND tree_id = ? AND (question LIKE ? OR answer LIKE ? OR summary LIKE ?)
+           ORDER BY updated_at DESC, rowid DESC
+           LIMIT ?`,
+          [treeId, like, like, like, limit]
+        )
+      : await this.db.select<NodeRow>(
+          `SELECT * FROM nodes
+           WHERE is_active = 1 AND (question LIKE ? OR answer LIKE ? OR summary LIKE ?)
+           ORDER BY updated_at DESC, rowid DESC
+           LIMIT ?`,
+          [like, like, like, limit]
+        );
     return rows.map(rowToNode);
   }
 
-  /** 全部活跃节点之间的边（树状图全局视图用） */
-  async getAllActiveEdges(): Promise<TreeEdge[]> {
-    const rows = await this.db.select<import("../types").EdgeRow>(
-      `SELECT DISTINCT e.* FROM edges e
-       JOIN nodes p ON p.id = e.parent_id
-       JOIN nodes c ON c.id = e.child_id
-       WHERE p.is_active = 1 AND c.is_active = 1
-       ORDER BY e.created_at ASC, e.rowid ASC`
-    );
+  /** 全部活跃节点之间的边（可限定树） */
+  async getAllActiveEdges(treeId?: string | null): Promise<TreeEdge[]> {
+    const rows = treeId
+      ? await this.db.select<import("../types").EdgeRow>(
+          `SELECT DISTINCT e.* FROM edges e
+           JOIN nodes p ON p.id = e.parent_id
+           JOIN nodes c ON c.id = e.child_id
+           WHERE p.is_active = 1 AND c.is_active = 1 AND p.tree_id = ? AND c.tree_id = ?
+           ORDER BY e.created_at ASC, e.rowid ASC`,
+          [treeId, treeId]
+        )
+      : await this.db.select<import("../types").EdgeRow>(
+          `SELECT DISTINCT e.* FROM edges e
+           JOIN nodes p ON p.id = e.parent_id
+           JOIN nodes c ON c.id = e.child_id
+           WHERE p.is_active = 1 AND c.is_active = 1
+           ORDER BY e.created_at ASC, e.rowid ASC`
+        );
     return rows.map(rowToEdge);
   }
 }

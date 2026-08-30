@@ -4,9 +4,17 @@
  */
 
 export const SCHEMA_SQL: string[] = [
+  // 树（多棵树：每个树是独立的对话项目）
+  `CREATE TABLE IF NOT EXISTS trees (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+
   // 节点表：一个节点 = 用户问 + AI答
   `CREATE TABLE IF NOT EXISTS nodes (
     id           TEXT PRIMARY KEY,
+    tree_id      TEXT REFERENCES trees(id) ON DELETE CASCADE,
     question     TEXT NOT NULL DEFAULT '',
     answer       TEXT NOT NULL DEFAULT '',
     type         TEXT NOT NULL DEFAULT 'normal',
@@ -18,6 +26,7 @@ export const SCHEMA_SQL: string[] = [
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
+  `CREATE INDEX IF NOT EXISTS idx_nodes_tree ON nodes(tree_id)`,
 
   // 边表：DAG 核心，支持多父节点（合并）
   `CREATE TABLE IF NOT EXISTS edges (

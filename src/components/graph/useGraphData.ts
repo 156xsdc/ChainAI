@@ -24,6 +24,7 @@ export interface GraphData {
 export function useGraphData(): GraphData | null {
   const repos = useChatStore((s) => s.repos);
   const currentNodeId = useChatStore((s) => s.currentNodeId);
+  const currentTreeId = useChatStore((s) => s.currentTreeId);
   // 结构变化触发重新加载（对话/导航改变 currentNodeId；删除/分组等显式 bump）
   const graphVersion = useGraphStore((s) => s.graphVersion);
   const [data, setData] = useState<GraphData | null>(null);
@@ -33,8 +34,8 @@ export function useGraphData(): GraphData | null {
     let cancelled = false;
     (async () => {
       const [nodes, edges, pathSegs] = await Promise.all([
-        repos.nodes.getAllActive(),
-        repos.nodes.getAllActiveEdges(),
+        repos.nodes.getAllActive(currentTreeId),
+        repos.nodes.getAllActiveEdges(currentTreeId),
         currentNodeId
           ? repos.nodes.getPathToRoot(currentNodeId)
           : Promise.resolve([]),
@@ -68,7 +69,7 @@ export function useGraphData(): GraphData | null {
     return () => {
       cancelled = true;
     };
-  }, [repos, currentNodeId, graphVersion]);
+  }, [repos, currentNodeId, currentTreeId, graphVersion]);
 
   return data;
 }

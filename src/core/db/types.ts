@@ -9,6 +9,7 @@ export type RelationType = "inherit" | "non_inherit";
 /** nodes 表行（原始） */
 export interface NodeRow {
   id: string;
+  tree_id: string | null;
   question: string;
   answer: string;
   type: NodeType;
@@ -24,6 +25,7 @@ export interface NodeRow {
 /** 应用层节点 */
 export interface TreeNode {
   id: string;
+  treeId: string | null;
   question: string;
   answer: string;
   type: NodeType;

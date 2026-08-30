@@ -9,7 +9,6 @@ import {
   ChevronRight,
   MoreHorizontal,
   Plus,
-  Star,
 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
@@ -155,13 +154,6 @@ export function FavoritesSection() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] text-neutral-400">
-        <Star size={12} /> 收藏夹
-        <span className="ml-auto text-[9px] text-neutral-300">
-          {favs.length} 项
-        </span>
-      </div>
-
       {/* 新建分组（明确入口） */}
       <button
         className="mb-2 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-neutral-300 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"

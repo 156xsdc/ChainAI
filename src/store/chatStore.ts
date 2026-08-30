@@ -33,6 +33,7 @@ import { confirmDialog } from "./dialogStore";
 import type { Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
 import { getBranchLabel } from "../core/tree/branchLabel";
+import type { Tree } from "../core/db/repositories/treeRepo";
 import {
   initAppDatabase,
   type AppRepositories,
@@ -75,6 +76,9 @@ interface ChatState {
   uiError: string | null;
 
   currentNodeId: string | null;
+  /** 当前树（多棵树：每个树独立对话项目） */
+  currentTreeId: string | null;
+  trees: Tree[];
   path: ChatStreamItem[];
 
   streaming: boolean;
@@ -133,6 +137,14 @@ interface ChatState {
   bumpFavVersion: () => void;
   /** 清空全部对话（节点软删除到回收站 + 清会话） */
   clearAllChat: () => Promise<void>;
+  /** 新建树 */
+  createTree: (name: string) => Promise<string>;
+  /** 重命名树 */
+  renameTree: (treeId: string, name: string) => Promise<void>;
+  /** 删除树（节点移入回收站） */
+  deleteTree: (treeId: string) => Promise<void>;
+  /** 切换当前树 */
+  switchTree: (treeId: string) => Promise<void>;
   /** 立即执行一次自动清理 */
   cleanupNow: () => Promise<{ branches: number; nodes: number } | null>;
   /** 导出当前整棵树为 Markdown 文档 */
@@ -153,6 +165,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   initError: null,
   uiError: null,
   currentNodeId: null,
+  currentTreeId: null,
+  trees: [],
   path: [],
   streaming: false,
   preparing: false,
@@ -188,12 +202,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
         },
       });
 
-      // 恢复上次会话位置
-      const saved = await repos.settings.get<string | null>(
-        "chat.currentNodeId",
-        null
+      // 加载树列表 + 恢复当前树
+      const trees = await repos.trees.list();
+      const treeId = await repos.settings.get<string | null>(
+        "chat.currentTreeId",
+        trees[0]?.id ?? null
       );
-      set({ repos, treeService });
+      const currentTreeId = trees.some((t) => t.id === treeId)
+        ? treeId
+        : (trees[0]?.id ?? null);
+
+      // 恢复当前树的上次会话位置
+      const saved = currentTreeId
+        ? await repos.settings.get<string | null>(
+            `chat.currentNodeId.${currentTreeId}`,
+            null
+          )
+        : null;
+      set({ repos, treeService, trees, currentTreeId });
       if (saved) {
         const node = await repos.nodes.getNode(saved);
         if (node) set({ currentNodeId: node.id });
@@ -269,9 +295,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   navigateTo: async (nodeId) => {
-    const { repos } = get();
+    const { repos, currentTreeId } = get();
     if (!repos) return;
-    await repos.settings.set("chat.currentNodeId", nodeId);
+    // 跨树跳转（收藏/搜索可能来自其他树）：先切换树
+    const node = await repos.nodes.getNode(nodeId);
+    if (node?.treeId && node.treeId !== currentTreeId) {
+      await repos.settings.set("chat.currentTreeId", node.treeId);
+      set({ currentTreeId: node.treeId });
+    }
+    const treeId = node?.treeId ?? currentTreeId;
+    if (treeId) {
+      await repos.settings.set(`chat.currentNodeId.${treeId}`, nodeId);
+    }
     set({ currentNodeId: nodeId });
     await get().refreshPath();
   },
@@ -286,9 +321,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendMessage: async (text) => {
-    const { repos, treeService, currentNodeId, streaming } = get();
+    const { repos, treeService, currentNodeId, currentTreeId, streaming } =
+      get();
     const trimmed = text.trim();
     if (!repos || !treeService || !trimmed || streaming) return;
+    // 无当前树时自动创建（首次使用）
+    let treeId = currentTreeId;
+    if (!treeId) {
+      const first = (await repos.trees.list())[0];
+      treeId = first?.id ?? (await repos.trees.create("默认树")).id;
+      set({ currentTreeId: treeId });
+    }
 
     const config = providerManager.getActiveConfig();
     if (!config) {
@@ -300,7 +343,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       if (!nodeId) {
         // 首次对话：创建根节点
-        const node = await repos.nodes.createNode({ question: trimmed });
+        const node = await repos.nodes.createNode({
+          question: trimmed,
+          treeId,
+        });
         nodeId = node.id;
         set({ currentNodeId: nodeId });
       } else {
@@ -312,6 +358,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // 已有问答：创建子节点继续
           const { node } = await treeService.addChild(nodeId, {
             question: trimmed,
+            treeId,
           });
           nodeId = node.id;
           set({ currentNodeId: nodeId });
@@ -322,7 +369,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    await repos.settings.set("chat.currentNodeId", nodeId);
+    await repos.settings.set(`chat.currentNodeId.${treeId}`, nodeId);
 
     // 立即刷新：用户消息显示到聊天区
     await get().refreshPath();
@@ -518,8 +565,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (parents.length > 0) {
         await get().navigateTo(parents[0].id);
       } else {
+        const { currentTreeId } = get();
         set({ currentNodeId: null });
-        await repos.settings.set("chat.currentNodeId", null);
+        if (currentTreeId) {
+          await repos.settings.set(`chat.currentNodeId.${currentTreeId}`, null);
+        }
         await get().refreshPath();
       }
     } else {
@@ -627,10 +677,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearAllChat: async () => {
-    const { repos } = get();
+    const { repos, currentTreeId } = get();
     if (!repos) return;
-    // 全部节点软删除 + 回收站
-    const all = await repos.nodes.getAllActive();
+    // 当前树全部节点软删除 + 回收站
+    const all = await repos.nodes.getAllActive(currentTreeId);
     for (const n of all) {
       await repos.nodes.softDeleteNode(n.id);
       await repos.recycleBin.add(n.id);
@@ -640,14 +690,75 @@ export const useChatStore = create<ChatState>((set, get) => ({
       `DELETE FROM sessions WHERE is_active = 1`
     );
     // 重置当前节点
-    await repos.settings.set("chat.currentNodeId", null);
+    if (currentTreeId) {
+      await repos.settings.set(`chat.currentNodeId.${currentTreeId}`, null);
+    }
     set({ currentNodeId: null });
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
     set({
-      notice: `🗑️ 已清空全部对话（${all.length} 个节点移入回收站，可在回收站恢复）`,
+      notice: `🗑️ 已清空当前树对话（${all.length} 个节点移入回收站，可在回收站恢复）`,
       noticeTone: "info",
     });
+  },
+
+  createTree: async (name) => {
+    const { repos } = get();
+    if (!repos) return "";
+    const tree = await repos.trees.create(name.trim() || "新树");
+    await repos.settings.set("chat.currentTreeId", tree.id);
+    set({ currentTreeId: tree.id, currentNodeId: null });
+    await get().refreshPath();
+    useGraphStore.getState().bumpGraphVersion();
+    set({ notice: `🌳 已新建树「${tree.name}」` });
+    return tree.id;
+  },
+
+  renameTree: async (treeId, name) => {
+    const { repos } = get();
+    if (!repos) return;
+    await repos.trees.rename(treeId, name.trim() || "未命名");
+    const trees = await repos.trees.list();
+    set({ trees });
+    set({ notice: "✏️ 已重命名" });
+  },
+
+  deleteTree: async (treeId) => {
+    const { repos } = get();
+    if (!repos) return;
+    // 树内节点软删除 + 回收站
+    const nodes = await repos.nodes.getAllActive(treeId);
+    for (const n of nodes) {
+      await repos.nodes.softDeleteNode(n.id);
+      await repos.recycleBin.add(n.id);
+    }
+    await repos.trees.remove(treeId);
+    // 切到剩余第一棵树（或新建默认树）
+    const trees = await repos.trees.list();
+    const next =
+      trees[0] ?? (await repos.trees.create("默认树"));
+    await repos.settings.set("chat.currentTreeId", next.id);
+    set({ currentTreeId: next.id, currentNodeId: null, trees });
+    await get().refreshPath();
+    useGraphStore.getState().bumpGraphVersion();
+    set({
+      notice: `🗑️ 已删除树（${nodes.length} 个节点移入回收站）`,
+      noticeTone: "info",
+    });
+  },
+
+  switchTree: async (treeId) => {
+    const { repos } = get();
+    if (!repos) return;
+    await repos.settings.set("chat.currentTreeId", treeId);
+    // 恢复该树上次位置
+    const saved = await repos.settings.get<string | null>(
+      `chat.currentNodeId.${treeId}`,
+      null
+    );
+    set({ currentTreeId: treeId, currentNodeId: saved });
+    await get().refreshPath();
+    useGraphStore.getState().bumpGraphVersion();
   },
 
   exportMarkdown: async () => {

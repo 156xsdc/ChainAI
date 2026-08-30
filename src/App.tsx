@@ -7,7 +7,7 @@ import { useChatStore } from "./store/chatStore";
 import { useUIStore } from "./store/uiStore";
 import { ChatArea } from "./components/chat/ChatArea";
 import { Rail } from "./components/layout/Rail";
-import { LeftSidebar } from "./components/layout/LeftSidebar";
+import { FavoritesPanel } from "./components/layout/FavoritesPanel";
 import { RightSidebar } from "./components/layout/RightSidebar";
 import { GraphPanel } from "./components/graph/GraphPanel";
 import { GraphFullscreen } from "./components/graph/GraphFullscreen";
@@ -24,9 +24,8 @@ export default function App() {
   const notifyDuration = useChatStore((s) => s.notifyDuration);
   const clearError = useChatStore((s) => s.clearError);
   const clearNotice = useChatStore((s) => s.clearNotice);
-  const leftExpanded = useUIStore((s) => s.leftExpanded);
+  const leftPanel = useUIStore((s) => s.leftPanel);
   const rightExpanded = useUIStore((s) => s.rightExpanded);
-  const graphOpen = useUIStore((s) => s.graphOpen);
   const graphFullscreen = useUIStore((s) => s.graphFullscreen);
 
   useEffect(() => {
@@ -47,10 +46,10 @@ export default function App() {
         ui.setGraphFullscreen(!ui.graphFullscreen);
       } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "b") {
         e.preventDefault();
-        ui.toggleSidebar("left");
+        ui.toggleLeftPanel("graph");
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        ui.toggleSidebar("right");
+        ui.setSidebar("right", !ui.rightExpanded);
       } else if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
         void useChatStore.getState().createBlankNote();
@@ -91,9 +90,8 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AppContent
-        leftExpanded={leftExpanded}
+        leftPanel={leftPanel}
         rightExpanded={rightExpanded}
-        graphOpen={graphOpen}
         graphFullscreen={graphFullscreen}
         uiError={uiError}
         notice={notice}
@@ -107,9 +105,8 @@ export default function App() {
 }
 
 function AppContent({
-  leftExpanded,
+  leftPanel,
   rightExpanded,
-  graphOpen,
   graphFullscreen,
   uiError,
   notice,
@@ -118,9 +115,8 @@ function AppContent({
   clearError,
   clearNotice,
 }: {
-  leftExpanded: boolean;
+  leftPanel: "graph" | "favorites" | null;
   rightExpanded: boolean;
-  graphOpen: boolean;
   graphFullscreen: boolean;
   uiError: string | null;
   notice: string | null;
@@ -131,8 +127,9 @@ function AppContent({
 }) {
   return (
     <div className="flex h-screen overflow-hidden bg-[#f5f5f5] text-neutral-800">
-      {leftExpanded ? <LeftSidebar /> : <Rail side="left" />}
-      {graphOpen && !graphFullscreen && <GraphPanel />}
+      <Rail side="left" />
+      {leftPanel === "graph" && !graphFullscreen && <GraphPanel />}
+      {leftPanel === "favorites" && <FavoritesPanel />}
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatArea />
       </main>

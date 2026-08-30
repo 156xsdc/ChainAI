@@ -14,6 +14,7 @@ import { NoteRepository } from "./repositories/noteRepo";
 import { SettingsRepository } from "./repositories/settingsRepo";
 import { RecycleBinRepository } from "./repositories/recycleBinRepo";
 import { DirectoryRepository } from "./repositories/directoryRepo";
+import { TreeRepository } from "./repositories/treeRepo";
 
 export { TauriSqlBackend, withTransaction, type SqlBackend } from "./backend";
 export * from "./types";
@@ -25,6 +26,7 @@ export * from "./repositories/noteRepo";
 export * from "./repositories/settingsRepo";
 export * from "./repositories/recycleBinRepo";
 export * from "./repositories/directoryRepo";
+export * from "./repositories/treeRepo";
 
 /** 应用数据仓库集合 */
 export interface AppRepositories {
@@ -37,6 +39,7 @@ export interface AppRepositories {
   settings: SettingsRepository;
   recycleBin: RecycleBinRepository;
   directories: DirectoryRepository;
+  trees: TreeRepository;
 }
 
 /** 对任意 backend 执行建表 */
@@ -51,6 +54,29 @@ export async function initSchema(db: SqlBackend): Promise<void> {
     );
   } catch {
     // 列已存在
+  }
+  // 兼容旧库：nodes 表补充 tree_id 列（已存在则忽略）
+  try {
+    await db.execute(`ALTER TABLE nodes ADD COLUMN tree_id TEXT`);
+  } catch {
+    // 列已存在
+  }
+  // 默认树：无树时创建；旧节点归入默认树
+  const treeRows = await db.select<{ id: string }>(`SELECT id FROM trees LIMIT 1`);
+  if (treeRows.length === 0) {
+    await db.execute(
+      `INSERT INTO trees (id, name, created_at) VALUES (?, ?, ?)`,
+      [crypto.randomUUID(), "默认树", new Date().toISOString()]
+    );
+  }
+  const firstTree = await db.select<{ id: string }>(
+    `SELECT id FROM trees ORDER BY created_at ASC, rowid ASC LIMIT 1`
+  );
+  if (firstTree[0]) {
+    await db.execute(
+      `UPDATE nodes SET tree_id = ? WHERE tree_id IS NULL OR tree_id = ''`,
+      [firstTree[0].id]
+    );
   }
   // 迁移：把已有便签的分类目录同步到 directories 表（幂等）
   const noteCats = await db.select<{ category: string }>(
@@ -83,6 +109,7 @@ export function createRepositories(db: SqlBackend): AppRepositories {
     settings: new SettingsRepository(db),
     recycleBin: new RecycleBinRepository(db),
     directories: new DirectoryRepository(db),
+    trees: new TreeRepository(db),
   };
 }
 

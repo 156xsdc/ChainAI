@@ -5,6 +5,7 @@ import type { TreeEdge, TreeNode } from "../../db/types";
 function node(id: string, createdAt = "2026-01-01T00:00:00.000Z"): TreeNode {
   return {
     id,
+    treeId: null,
     question: `Q${id}`,
     answer: "",
     type: "normal",

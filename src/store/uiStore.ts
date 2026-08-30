@@ -1,49 +1,39 @@
 /**
- * UI 状态：侧栏展开、树状图全屏等界面级状态
+ * UI 状态：左侧面板（树状图/收藏）、右侧便签板、全屏等界面级状态
  */
 import { create } from "zustand";
 
-type Side = "left" | "right";
+type Side = "right";
+export type LeftPanel = "graph" | "favorites" | null;
 
 interface UIState {
-  /** 左侧边栏是否展开 */
-  leftExpanded: boolean;
+  /** 左侧当前面板（窄栏按钮切换，互斥） */
+  leftPanel: LeftPanel;
   /** 右侧便签板是否展开 */
   rightExpanded: boolean;
   /** 树状图是否全屏 */
   graphFullscreen: boolean;
-  /** 树状图面板（聊天区左侧）是否展开 */
-  graphOpen: boolean;
   /** 全局搜索（Ctrl+P） */
   searchOpen: boolean;
 
-  toggleSidebar: (side: Side) => void;
-  setGraphOpen: (v: boolean) => void;
-  setSearchOpen: (v: boolean) => void;
+  setLeftPanel: (p: LeftPanel) => void;
+  toggleLeftPanel: (p: Exclude<LeftPanel, null>) => void;
   setSidebar: (side: Side, expanded: boolean) => void;
   setGraphFullscreen: (v: boolean) => void;
+  setSearchOpen: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
-  leftExpanded: false,
+  leftPanel: null,
   rightExpanded: false,
   graphFullscreen: false,
-  graphOpen: false,
   searchOpen: false,
 
-  setGraphOpen: (v) => set({ graphOpen: v }),
-  setSearchOpen: (v) => set({ searchOpen: v }),
-  toggleSidebar: (side) =>
-    set((state) =>
-      side === "left"
-        ? { leftExpanded: !state.leftExpanded }
-        : { rightExpanded: !state.rightExpanded }
-    ),
+  setLeftPanel: (p) => set({ leftPanel: p }),
+  toggleLeftPanel: (p) =>
+    set((s) => ({ leftPanel: s.leftPanel === p ? null : p })),
   setSidebar: (side, expanded) =>
-    set(
-      side === "left"
-        ? { leftExpanded: expanded }
-        : { rightExpanded: expanded }
-    ),
+    set(side === "right" ? { rightExpanded: expanded } : {}),
   setGraphFullscreen: (v) => set({ graphFullscreen: v }),
+  setSearchOpen: (v) => set({ searchOpen: v }),
 }));

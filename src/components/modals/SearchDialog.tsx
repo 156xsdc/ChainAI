@@ -19,6 +19,7 @@ export function SearchDialog() {
   const setSearchOpen = useUIStore((s) => s.setSearchOpen);
   const repos = useChatStore((s) => s.repos);
   const navigateTo = useChatStore((s) => s.navigateTo);
+  const currentTreeId = useChatStore((s) => s.currentTreeId);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TreeNode[]>([]);
   const [active, setActive] = useState(0);
@@ -41,12 +42,12 @@ export function SearchDialog() {
       return;
     }
     const timer = setTimeout(async () => {
-      const r = await repos.nodes.search(q);
+      const r = await repos.nodes.search(q, 50, currentTreeId);
       setResults(r);
       setActive(0);
     }, 200);
     return () => clearTimeout(timer);
-  }, [query, repos]);
+  }, [query, repos, currentTreeId]);
 
   const go = (nodeId: string) => {
     void navigateTo(nodeId);

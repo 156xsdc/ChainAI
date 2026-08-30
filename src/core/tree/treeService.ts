@@ -26,6 +26,8 @@ export interface CreateBranchInput {
   /** inheritMode=count 时的继承条数 */
   inheritCount?: number;
   color?: string;
+  /** 所属树 */
+  treeId?: string | null;
 }
 
 export interface CreateMergeInput {
@@ -33,6 +35,7 @@ export interface CreateMergeInput {
   question?: string;
   inheritCount?: number;
   color?: string;
+  treeId?: string | null;
 }
 
 export interface BranchResult {
@@ -52,13 +55,14 @@ export class TreeService {
   /** 在父节点下追加普通子节点（同会话内线性继续，继承上下文） */
   async addChild(
     parentNodeId: string,
-    input: { question?: string; answer?: string; type?: NodeType; color?: string } = {}
+    input: { question?: string; answer?: string; type?: NodeType; color?: string; treeId?: string | null } = {}
   ): Promise<{ node: TreeNode; edge: TreeEdge }> {
     const node = await this.nodes.createNode({
       question: input.question ?? "",
       answer: input.answer ?? "",
       type: input.type ?? "normal",
       color: input.color,
+      treeId: input.treeId,
     });
     try {
       const edge = await this.nodes.addEdge(parentNodeId, node.id, "inherit");
@@ -89,6 +93,7 @@ export class TreeService {
       type: nodeType,
       color: isNewStart ? "#9a6b3f" : input.color, // 新开始节点用特殊颜色
       summary: isNewStart ? "新开始" : undefined,
+      treeId: input.treeId,
     });
 
     try {
@@ -137,6 +142,7 @@ export class TreeService {
       type: "merge",
       color: input.color ?? "#5b5bd6", // 合并节点特殊颜色
       summary: "合并",
+      treeId: input.treeId,
     });
 
     try {

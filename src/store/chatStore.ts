@@ -32,6 +32,7 @@ import { useGraphStore } from "./graphStore";
 import { confirmDialog } from "./dialogStore";
 import type { Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
+import { getBranchLabel } from "../core/tree/branchLabel";
 import {
   initAppDatabase,
   type AppRepositories,
@@ -98,6 +99,8 @@ interface ChatState {
   toggleFavorite: (nodeId: string) => Promise<void>;
   /** 切换📌保留标记（自动清理保护） */
   toggleKeep: (nodeId: string) => Promise<void>;
+  /** 重命名分支（会话名；非分支节点则更新节点摘要） */
+  renameBranch: (nodeId: string, name: string) => Promise<void>;
   /** 删除分支（该节点及其全部后代）：软删除 + 回收站 + 导航调整 */
   deleteBranch: (nodeId: string) => Promise<{ deletedCount: number }>;
   stopStreaming: () => void;
@@ -243,19 +246,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // 分叉点：该节点有多个子节点时显示分支提示线
       const children = await repos.nodes.getChildrenWithEdge(node.id);
       if (children.length > 1) {
-        items.push({
-          kind: "branch",
-          parentNodeId: node.id,
-          children: children.map((c) => ({
+        const options: BranchOption[] = [];
+        for (const c of children) {
+          options.push({
             nodeId: c.node.id,
-            label:
-              c.node.summary ||
-              c.node.question.slice(0, 14) ||
-              "未命名分支",
+            label: await getBranchLabel(repos, c.node),
             color: c.node.color,
             relationType: c.edge.relationType,
             isCurrent: c.node.id === currentNodeId,
-          })),
+          });
+        }
+        items.push({
+          kind: "branch",
+          parentNodeId: node.id,
+          children: options,
         });
       }
     }
@@ -474,6 +478,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const node = await repos.nodes.getNode(nodeId);
     if (!node) return;
     await repos.nodes.updateNode(nodeId, { isKept: !node.isKept });
+    useGraphStore.getState().bumpGraphVersion();
+    await get().refreshPath();
+  },
+
+  renameBranch: async (nodeId, name) => {
+    const { repos } = get();
+    if (!repos) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const session = await repos.sessions.getByStartNode(nodeId);
+    if (session) {
+      await repos.sessions.update(session.id, { name: trimmed });
+    } else {
+      // 非分支节点：更新节点摘要（分支提示线同样显示）
+      await repos.nodes.updateNode(nodeId, { summary: trimmed });
+    }
     useGraphStore.getState().bumpGraphVersion();
     await get().refreshPath();
   },

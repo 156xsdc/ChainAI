@@ -4,7 +4,7 @@
  * 每个分支可删除（hover 显示 ✕），右侧 + 新建分支
  */
 import { memo } from "react";
-import { Plus, X } from "lucide-react";
+import { Pencil, Plus, X } from "lucide-react";
 import type { BranchOption } from "../../store/chatStore";
 
 interface BranchDividerProps {
@@ -12,6 +12,7 @@ interface BranchDividerProps {
   onSelect: (nodeId: string) => void;
   onAddBranch: (parentNodeId: string) => void;
   onDeleteBranch: (nodeId: string, label: string) => void;
+  onRenameBranch: (nodeId: string) => void;
   parentNodeId: string;
 }
 
@@ -20,6 +21,7 @@ export const BranchDivider = memo(function BranchDivider({
   onSelect,
   onAddBranch,
   onDeleteBranch,
+  onRenameBranch,
   parentNodeId,
 }: BranchDividerProps) {
   return (
@@ -43,6 +45,17 @@ export const BranchDivider = memo(function BranchDivider({
               style={{ background: b.color }}
             />
             {b.label}
+          </button>
+          {/* 重命名分支 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRenameBranch(b.nodeId);
+            }}
+            title="重命名分支"
+            className="absolute -left-1 -top-1.5 z-10 hidden h-3.5 w-3.5 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-400 shadow-sm transition-colors hover:border-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 group-hover/chip:flex"
+          >
+            <Pencil size={7.5} strokeWidth={2.5} />
           </button>
           {/* 删除该分支（含子树） */}
           <button

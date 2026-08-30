@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useChatStore } from "../../store/chatStore";
+import { promptDialog } from "../../store/dialogStore";
 import { MessageItem } from "./MessageItem";
 import { BranchDivider } from "./BranchDivider";
 import { ContextMenu } from "./ContextMenu";
@@ -19,6 +20,17 @@ export function MessageList() {
   const navigateTo = useChatStore((s) => s.navigateTo);
   const createBranch = useChatStore((s) => s.createBranch);
   const deleteBranch = useChatStore((s) => s.deleteBranch);
+  const renameBranch = useChatStore((s) => s.renameBranch);
+
+  /** 重命名分支 */
+  const handleRenameBranch = async (nodeId: string) => {
+    const name = await promptDialog({
+      title: "重命名分支",
+      placeholder: "分支名称",
+    });
+    if (name === null) return;
+    await renameBranch(nodeId, name);
+  };
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<{
@@ -112,6 +124,7 @@ export function MessageList() {
                 setMenu(null);
               }}
               onDeleteBranch={(nodeId, label) => void openDeleteConfirm(nodeId, label)}
+              onRenameBranch={(nodeId) => void handleRenameBranch(nodeId)}
             />
           );
         })}

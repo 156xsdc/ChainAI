@@ -12,6 +12,7 @@ import {
   Square,
 } from "lucide-react";
 import { useChatStore, type BranchOption } from "../../store/chatStore";
+import { getBranchLabel } from "../../core/tree/branchLabel";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { BranchDialog } from "../modals/BranchDialog";
 import { NewStartDialog } from "../modals/NewStartDialog";
@@ -44,17 +45,19 @@ export function InputCard() {
       return;
     }
     let cancelled = false;
-    repos.nodes.getChildrenWithEdge(currentNodeId).then((cs) => {
+    repos.nodes.getChildrenWithEdge(currentNodeId).then(async (cs) => {
       if (cancelled) return;
-      setChildren(
-        cs.map((c) => ({
+      const options: BranchOption[] = [];
+      for (const c of cs) {
+        options.push({
           nodeId: c.node.id,
-          label: c.node.summary || c.node.question.slice(0, 12) || "未命名",
+          label: await getBranchLabel(repos, c.node),
           color: c.node.color,
           relationType: c.edge.relationType,
           isCurrent: false,
-        }))
-      );
+        });
+      }
+      if (!cancelled) setChildren(options);
     });
     return () => {
       cancelled = true;

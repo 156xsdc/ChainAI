@@ -5,6 +5,8 @@
  * - 分支创建、新开始、导航、收藏
  */
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
+import { documentDir, join } from "@tauri-apps/api/path";
 import { providerManager } from "../core/ai/manager";
 import { ChatError } from "../core/ai/errors";
 import type { ChatMessage } from "../core/ai/types";
@@ -114,6 +116,10 @@ interface ChatState {
   exportMarkdown: () => Promise<void>;
   /** 导入 Markdown 文档为树（追加） */
   importMarkdown: () => Promise<void>;
+  /** 立即执行一次 JSON 自动备份（备份目录） */
+  backupNow: (silent?: boolean) => Promise<void>;
+  /** 检查并按设置执行自动备份（应用启动时调用） */
+  checkAutoBackup: () => Promise<void>;
 }
 
 let streamController: AbortController | null = null;
@@ -157,6 +163,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (node) set({ currentNodeId: node.id });
       }
       await get().refreshPath();
+      // 启动时执行自动清理与自动备份（不阻塞初始化）
+      void get().cleanupNow();
+      void get().checkAutoBackup();
     } catch (err) {
       set({
         initError:
@@ -567,6 +576,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (err) {
       set({ uiError: `导入失败：${(err as Error).message}` });
     }
+  },
+
+  backupNow: async (silent = false) => {
+    const { repos } = get();
+    if (!repos) return;
+    try {
+      const json = await exportAll(repos);
+      const doc = await documentDir();
+      const dir = await join(doc, "AITreeBackups");
+      const file = await join(
+        dir,
+        `chainai-backup-${new Date().toISOString().slice(0, 10)}.json`
+      );
+      await invoke("write_text_file", { path: file, content: json });
+      await repos.settings.set("backup.lastBackupAt", new Date().toISOString());
+      if (!silent) set({ notice: `💾 已备份：${file}` });
+    } catch {
+      // 备份失败静默（不打断用户）
+    }
+  },
+
+  checkAutoBackup: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    const backupSettings = await repos.settings.get<{
+      enabled?: boolean;
+      intervalDays?: number;
+    }>("backup", { enabled: true, intervalDays: 3 });
+    if (backupSettings.enabled === false) return;
+    const interval = backupSettings.intervalDays ?? 3;
+    const last = await repos.settings.get<string | null>(
+      "backup.lastBackupAt",
+      null
+    );
+    if (
+      last &&
+      Date.now() - new Date(last).getTime() < interval * 86400000
+    ) {
+      return;
+    }
+    await get().backupNow(true);
   },
 
   cleanupNow: async () => {

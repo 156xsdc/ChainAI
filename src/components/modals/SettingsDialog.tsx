@@ -51,8 +51,12 @@ export function SettingsDialog({
   const exportMarkdown = useChatStore((s) => s.exportMarkdown);
   const importMarkdown = useChatStore((s) => s.importMarkdown);
   const cleanupNow = useChatStore((s) => s.cleanupNow);
+  const backupNow = useChatStore((s) => s.backupNow);
   const [cleanupEnabled, setCleanupEnabled] = useState(true);
   const [cleanupDays, setCleanupDays] = useState(30);
+  const [backupEnabled, setBackupEnabled] = useState(true);
+  const [backupInterval, setBackupInterval] = useState(3);
+  const [defaultInherit, setDefaultInherit] = useState(10);
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
 
   useEffect(() => {
@@ -71,12 +75,34 @@ export function SettingsDialog({
           setCleanupEnabled(s.enabled !== false);
           setCleanupDays(s.days ?? 30);
         });
+      // 加载备份设置与默认继承数量
+      void useChatStore
+        .getState()
+        .repos?.settings.get<{ enabled?: boolean; intervalDays?: number }>(
+          "backup",
+          { enabled: true, intervalDays: 3 }
+        )
+        .then((s) => {
+          setBackupEnabled(s.enabled !== false);
+          setBackupInterval(s.intervalDays ?? 3);
+        });
+      void useChatStore
+        .getState()
+        .repos?.settings.get<number>("ai.defaultInheritCount", 10)
+        .then((v) => setDefaultInherit(v));
     }
   }, [open]);
 
   /** 保存清理设置 */
   const saveCleanup = (enabled: boolean, days: number) => {
     useChatStore.getState().repos?.settings.set("cleanup", { enabled, days });
+  };
+
+  /** 保存备份设置 */
+  const saveBackup = (enabled: boolean, intervalDays: number) => {
+    useChatStore
+      .getState()
+      .repos?.settings.set("backup", { enabled, intervalDays });
   };
 
   const persist = async (list: ProviderConfig[]) => {
@@ -186,10 +212,73 @@ export function SettingsDialog({
           ))}
         </div>
 
+        {/* 上下文设置 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 text-xs text-neutral-500">上下文设置</div>
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-neutral-600">
+                分支默认继承消息数
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                className="w-20 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-xs outline-none focus:border-neutral-400"
+                value={defaultInherit}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setDefaultInherit(v);
+                  void useChatStore
+                    .getState()
+                    .repos?.settings.set("ai.defaultInheritCount", v);
+                }}
+              />
+            </div>
+            <div className="text-[10px] text-neutral-400">
+              分支创建对话框中的默认值；发送时上下文超过限制会提示分叉（设置 ai.contextLimit 可调上限）
+            </div>
+          </div>
+        </div>
+
         {/* 存储管理 */}
         <div className="rounded-xl border border-neutral-200 p-3.5">
           <div className="mb-2 text-xs text-neutral-500">存储管理</div>
           <div className="flex flex-col gap-2.5">
+            {/* 自动备份 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs text-neutral-700">自动备份</div>
+                <div className="text-[10px] text-neutral-400">
+                  启动时检查，超过间隔自动备份到 文档/AITreeBackups/
+                </div>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2">
+                <select
+                  className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
+                  value={backupInterval}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setBackupInterval(v);
+                    saveBackup(backupEnabled, v);
+                  }}
+                >
+                  <option value={1}>每天</option>
+                  <option value={3}>每3天</option>
+                  <option value={7}>每周</option>
+                </select>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-neutral-800"
+                  checked={backupEnabled}
+                  onChange={(e) => {
+                    setBackupEnabled(e.target.checked);
+                    saveBackup(e.target.checked, backupInterval);
+                  }}
+                />
+              </label>
+            </div>
+
             {/* 自动清理 */}
             <div className="flex items-center justify-between">
               <div>
@@ -230,6 +319,12 @@ export function SettingsDialog({
                 onClick={() => void cleanupNow()}
               >
                 <RefreshCw size={12} /> 立即清理
+              </button>
+              <button
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
+                onClick={() => void backupNow()}
+              >
+                <Download size={12} /> 立即备份
               </button>
               <button
                 className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"

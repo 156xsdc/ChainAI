@@ -2,7 +2,7 @@
  * 分支创建对话框：设置会话名 + 上下文继承模式
  * 分支节点 = 新会话起点
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useChatStore } from "../../store/chatStore";
 import { Modal } from "../common/Modal";
 import type { CreateBranchParams } from "../../store/chatStore";
@@ -25,6 +25,15 @@ export function BranchDialog({ open, parentNodeId, onClose }: BranchDialogProps)
   const [mode, setMode] = useState<(typeof modes)[number]["value"]>("count");
   const [count, setCount] = useState(10);
   const [busy, setBusy] = useState(false);
+
+  // 读取全局默认继承数量
+  useEffect(() => {
+    if (!open) return;
+    void useChatStore
+      .getState()
+      .repos?.settings.get<number>("ai.defaultInheritCount", 10)
+      .then((v) => setCount(v));
+  }, [open]);
 
   const handleConfirm = async () => {
     if (busy) return;

@@ -23,7 +23,7 @@ import { GraphCanvas } from "./GraphCanvas";
 const MIN_W = 260;
 const MAX_W = 640;
 
-export function GraphPanel() {
+export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
   const setLeftPanel = useUIStore((s) => s.setLeftPanel);
   const setGraphFullscreen = useUIStore((s) => s.setGraphFullscreen);
   const leftPanelWidth = useUIStore((s) => s.leftPanelWidth);
@@ -136,8 +136,10 @@ export function GraphPanel() {
 
   return (
     <div
-      className="relative flex shrink-0 flex-col border-r border-neutral-200 bg-white"
-      style={{ width: leftPanelWidth }}
+      className={`relative flex flex-col border-r border-neutral-200 bg-white ${
+        flexible ? "min-w-0 flex-1" : "shrink-0"
+      }`}
+      style={flexible ? undefined : { width: leftPanelWidth }}
     >
       {/* 标题栏：树管理 + 操作 */}
       <div className="relative flex items-center justify-between border-b border-neutral-100 px-2 py-1.5">

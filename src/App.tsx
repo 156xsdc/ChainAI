@@ -126,17 +126,25 @@ function AppContent({
   clearError: () => void;
   clearNotice: () => void;
 }) {
+  // 专注模式：树状图 + 便签并排（无聊天区）
+  const focusPair = leftPanel === "graph" && rightExpanded && !graphFullscreen;
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-neutral-800">
       {/* 自定义标题栏（替换系统标题栏） */}
       <TitleBar />
       <div className="flex min-h-0 flex-1">
       <Rail side="left" />
-      {leftPanel === "graph" && !graphFullscreen && <GraphPanel />}
+      {leftPanel === "graph" && !graphFullscreen && (
+        <GraphPanel flexible={focusPair} />
+      )}
       {leftPanel === "favorites" && <FavoritesPanel />}
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <ChatArea />
-      </main>
+      {/* 专注模式（树+便签并排）时隐藏聊天区 */}
+      {!focusPair && (
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <ChatArea />
+        </main>
+      )}
       {rightExpanded ? <RightSidebar /> : <Rail side="right" />}
       </div>
 

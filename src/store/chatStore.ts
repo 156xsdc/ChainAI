@@ -400,6 +400,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       compressFn: (group) => summarizeGroup(group, config),
     });
 
+    // 新开始/不继承模式：上下文可能为空，至少包含当前问题（API 要求非空消息）
+    if (messages.length === 0) {
+      messages.push({ role: "user", content: trimmed });
+    }
+
     // 上下文耗尽提示：估算 token 用量
     const totalTokens = estimateMessagesTokens(messages);
     const contextLimit = await repos.settings.get<number>(

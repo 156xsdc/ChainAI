@@ -26,6 +26,7 @@ import { useGraphStore } from "../../store/graphStore";
 import { useGraphData } from "./useGraphData";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { confirmDialog, promptDialog } from "../../store/dialogStore";
+import { ColorDialog } from "../common/ColorDialog";
 import { summarizeNodeGroup } from "../../core/context/aiSummarizer";
 import { savePngFile } from "../../core/io/files";
 import { MergeDialog } from "../modals/MergeDialog";
@@ -179,15 +180,10 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     bumpGraphVersion();
   };
 
-  const recolorGroup = async (group: NodeGroup) => {
-    const color = await promptDialog({
-      title: "修改分组颜色",
-      label: "HEX 颜色值（如 #5b5bd6）",
-      defaultValue: group.color,
-    });
-    if (color === null) return;
-    await repos?.groups.updateGroup(group.id, { color: color.trim() });
-    bumpGraphVersion();
+  const [colorDialog, setColorDialog] = useState<{ group: NodeGroup } | null>(null);
+
+  const recolorGroup = (group: NodeGroup) => {
+    setColorDialog({ group });
   };
 
   const deleteGroup = async (group: NodeGroup) => {
@@ -489,6 +485,21 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           </div>
         )}
       </div>
+
+      {/* 分组颜色对话框 */}
+      <ColorDialog
+        open={colorDialog !== null}
+        title="分组颜色"
+        value={colorDialog?.group.color ?? "#dcdcdc"}
+        onClose={() => setColorDialog(null)}
+        onConfirm={(color) => {
+          const g = colorDialog?.group;
+          if (g && repos) {
+            void repos.groups.updateGroup(g.id, { color });
+            bumpGraphVersion();
+          }
+        }}
+      />
 
       {/* 拖拽合并对话框 */}
       {mergeState && (

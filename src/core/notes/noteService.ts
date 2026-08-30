@@ -25,16 +25,18 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-/** 生成分类下的文件路径 */
+/** 生成分类下的文件路径（支持多级：category = "项目A/子项目"） */
 export async function noteFilePath(
   repos: AppRepositories,
   category: string | undefined,
   fileName: string
 ): Promise<string> {
   const dir = await getNotesDir(repos);
-  return category && category.trim()
-    ? join(dir, category.trim(), fileName)
-    : join(dir, fileName);
+  const segs = (category ?? "")
+    .split(/[\\/]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return segs.length > 0 ? join(dir, ...segs, fileName) : join(dir, fileName);
 }
 
 /** 便签存储目录（自定义或默认文档目录/AITreeNotes） */

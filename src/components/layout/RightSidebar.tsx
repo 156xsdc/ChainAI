@@ -3,7 +3,7 @@
  * - 目录树：根目录 + 分类子目录（点击筛选）
  * - 点击便签进入编辑，可返回列表
  */
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronsRight,
@@ -38,13 +38,13 @@ export function RightSidebar() {
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedDir, setSelectedDir] = useState(""); // "" = 根目录
+  /** 文件浏览器导航路径（[] = 根目录，["项目A"] = AITreeNotes/项目A） */
+  const [path, setPath] = useState<string[]>([]);
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#fafafa");
   const [tagsText, setTagsText] = useState("");
   const [category, setCategory] = useState("");
-  const [, forceRender] = useReducer((x: number) => x + 1, 0);
   const [width, setWidth] = useState(280);
   const widthRef = useRef(width);
   const dragRef = useRef(false);
@@ -104,27 +104,38 @@ export function RightSidebar() {
     setContent(await readNoteContent(repos!, note));
   };
 
-  // 目录结构（分类集合，根目录在前）
-  const dirs = useMemo(() => {
-    const cats = [...new Set(notes.map((n) => n.category || ""))];
-    return cats.sort((a, b) =>
-      a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)
-    );
-  }, [notes]);
+  // 当前导航路径字符串（"" = 根目录）
+  const currentPath = path.join("/");
 
-  const dirCount = (cat: string) =>
-    notes.filter((n) => (n.category || "") === cat).length;
+  // 当前目录的直接子目录（支持多级导航）
+  const subDirs = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of notes) {
+      const parts = (n.category || "").split(/[\\/]/).filter(Boolean);
+      if (parts.length <= path.length) continue;
+      if (path.length === 0 || n.category.startsWith(currentPath + "/")) {
+        set.add(parts[path.length]);
+      }
+    }
+    return [...set].sort();
+  }, [notes, path, currentPath]);
 
   // 当前目录下的便签
-  const visibleNotes = useMemo(
-    () => notes.filter((n) => (n.category || "") === selectedDir),
-    [notes, selectedDir]
+  const dirNotes = useMemo(
+    () => notes.filter((n) => (n.category || "") === currentPath),
+    [notes, currentPath]
   );
 
-  // 选择目录：退出编辑
-  const selectDir = (cat: string) => {
-    setSelectedDir(cat);
-    setSelectedId(null);
+  // 返回上级目录
+  const goUp = () => setPath((p) => p.slice(0, -1));
+
+  /** 便签移动到当前导航目录 */
+  const handleMoveToCurrent = async () => {
+    const note = notes.find((n) => n.id === selectedId);
+    if (!note || !repos) return;
+    await moveNoteFile(repos, note, currentPath);
+    setCategory(currentPath);
+    void loadNotes();
   };
 
   // 自动保存（防抖）
@@ -163,29 +174,6 @@ export function RightSidebar() {
       scheduleSave(note, {
         tags: t.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
       });
-    }
-  };
-
-  /** 分类变更：移动文件 + 更新记录 */
-  const handleCategoryChange = async (v: string) => {
-    setCategory(v);
-    const note = notes.find((n) => n.id === selectedId);
-    if (!note || !repos) return;
-    await moveNoteFile(repos, note, v);
-    setSelectedDir(v.trim());
-    void loadNotes();
-  };
-
-  /** 分类下拉选择：现有目录 / 新建分类 */
-  const handleCategorySelect = (v: string) => {
-    if (v === "__new__") {
-      const name = window.prompt("新建分类目录名称", "");
-      if (name && name.trim()) {
-        void handleCategoryChange(name.trim());
-      }
-      forceRender(); // 取消时让 select 回到当前值
-    } else {
-      void handleCategoryChange(v);
     }
   };
 
@@ -230,36 +218,86 @@ export function RightSidebar() {
         </div>
       </div>
 
-      {/* 上方：目录结构 */}
+      {/* 上方：文件浏览器（多级导航 + 返回上级） */}
       <div className="max-h-[38%] shrink-0 overflow-y-auto border-b border-neutral-100 px-3 py-2.5">
-        <div className="mb-1.5 flex items-center gap-1 text-[10px] text-neutral-400">
+        <div className="mb-1 flex items-center gap-1 text-[10px] text-neutral-400">
           <FolderTree size={10} /> 目录结构
-          <span className="ml-auto text-[9px] text-neutral-300">{notes.length} 个便签</span>
+          <span className="ml-auto text-[9px] text-neutral-300">
+            {selected ? "选择便签位置" : `${dirNotes.length} 个便签`}
+          </span>
         </div>
-        <div className="flex flex-col gap-0.5">
-          {dirs.map((cat) => (
+
+        {/* 面包屑 + 返回上级 */}
+        <div className="mb-1.5 flex items-center gap-1 overflow-x-auto text-[10px] whitespace-nowrap">
+          <button
+            className={`shrink-0 rounded px-1 py-0.5 hover:bg-neutral-100 ${
+              path.length === 0 ? "font-medium text-neutral-700" : "text-neutral-400 hover:text-neutral-600"
+            }`}
+            onClick={() => setPath([])}
+          >
+            AITreeNotes
+          </button>
+          {path.map((seg, i) => (
+            <span key={i} className="flex shrink-0 items-center gap-1">
+              <span className="text-neutral-300">/</span>
+              <button
+                className={`rounded px-1 py-0.5 hover:bg-neutral-100 ${
+                  i === path.length - 1
+                    ? "font-medium text-neutral-700"
+                    : "text-neutral-400 hover:text-neutral-600"
+                }`}
+                onClick={() => setPath(path.slice(0, i + 1))}
+              >
+                {seg}
+              </button>
+            </span>
+          ))}
+          {path.length > 0 && (
             <button
-              key={cat || "__root__"}
-              onClick={() => selectDir(cat)}
-              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
-                selectedDir === cat
-                  ? "bg-neutral-100 text-neutral-800"
-                  : "text-neutral-500 hover:bg-neutral-50"
-              }`}
-              title={`${cat ? `AITreeNotes/${cat}` : "AITreeNotes（根目录）"}`}
+              className="ml-1 shrink-0 rounded border border-neutral-200 px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+              onClick={goUp}
+              title="返回上级目录"
             >
-              <Folder
-                size={11}
-                className={selectedDir === cat ? "text-neutral-700" : "text-neutral-400"}
-              />
-              <span className="truncate">
-                {cat ? `${cat}/` : "根目录"}
-              </span>
-              <span className="ml-auto shrink-0 text-[9px] text-neutral-400">
-                {dirCount(cat)}
-              </span>
+              ↑ 上级
+            </button>
+          )}
+        </div>
+
+        {/* 当前目录内容 */}
+        <div className="flex flex-col gap-0.5">
+          {/* 子目录 */}
+          {subDirs.map((d) => (
+            <button
+              key={d}
+              onClick={() => setPath([...path, d])}
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] text-neutral-600 hover:bg-neutral-100"
+              title={`进入 ${d}/`}
+            >
+              <Folder size={11} className="shrink-0 text-neutral-400" />
+              <span className="truncate">{d}/</span>
             </button>
           ))}
+
+          {/* 当前目录便签 */}
+          {dirNotes.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => void selectNote(n)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-left text-[11px] hover:bg-neutral-100 ${
+                selectedId === n.id ? "bg-neutral-100 text-neutral-800" : "text-neutral-500"
+              }`}
+              title={n.title}
+            >
+              <StickyNote size={10} className="shrink-0 text-neutral-300" />
+              <span className="truncate">{n.title || "未命名便签"}</span>
+            </button>
+          ))}
+
+          {subDirs.length === 0 && dirNotes.length === 0 && (
+            <div className="px-2 py-2 text-[10px] text-neutral-300">
+              空目录{selected ? "（点下方「移到此处」可把便签放这里）" : ""}
+            </div>
+          )}
         </div>
       </div>
 
@@ -321,25 +359,23 @@ export function RightSidebar() {
               />
             </div>
 
-            {/* 分类子目录（下拉选择） */}
+            {/* 目录位置：在上方目录浏览器中选择 */}
             <div className="flex items-center gap-1.5 pb-2">
               <Folder size={11} className="shrink-0 text-neutral-300" />
-              <select
-                value={category}
-                onChange={(e) => handleCategorySelect(e.target.value)}
-                className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-1 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
-                title="分类子目录"
+              <div className="min-w-0 flex-1 truncate text-[10px] text-neutral-500" title={currentPath}>
+                位置：AITreeNotes{currentPath ? `/${currentPath}` : ""}
+              </div>
+              <button
+                className="shrink-0 rounded-md border border-neutral-300 px-2 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
+                disabled={category === currentPath}
+                onClick={() => void handleMoveToCurrent()}
+                title="在上方目录中导航，然后点此按钮移动便签"
               >
-                <option value="">根目录</option>
-                {dirs
-                  .filter((d) => d !== "")
-                  .map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                <option value="__new__">➕ 新建分类...</option>
-              </select>
+                移到此处
+              </button>
+            </div>
+            <div className="-mt-1 pb-1.5 text-[9px] text-neutral-300">
+              在上方目录结构中导航到目标目录，点「移到此处」更换位置
             </div>
 
             <textarea
@@ -356,7 +392,7 @@ export function RightSidebar() {
         ) : (
           /* ===== 列表（当前目录） ===== */
           <>
-            {visibleNotes.length === 0 ? (
+            {dirNotes.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <StickyNote size={26} strokeWidth={1} className="text-neutral-200" />
                 <div className="text-xs text-neutral-300">
@@ -367,7 +403,7 @@ export function RightSidebar() {
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
-                {visibleNotes.map((n) => (
+                {dirNotes.map((n) => (
                   <div key={n.id} className="group/note relative">
                     <button
                       onClick={() => void selectNote(n)}

@@ -706,8 +706,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { repos } = get();
     if (!repos) return "";
     const tree = await repos.trees.create(name.trim() || "新树");
+    // 刷新树列表（新建的树要立即出现在菜单中）
+    const trees = await repos.trees.list();
     await repos.settings.set("chat.currentTreeId", tree.id);
-    set({ currentTreeId: tree.id, currentNodeId: null });
+    set({ currentTreeId: tree.id, currentNodeId: null, trees });
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
     set({ notice: `🌳 已新建树「${tree.name}」` });

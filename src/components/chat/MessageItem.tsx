@@ -1,0 +1,49 @@
+/**
+ * 单条消息：用户（浅灰气泡）/ AI（Markdown 全文）
+ */
+import type { CSSProperties } from "react";
+import type { ChatStreamItem } from "../../store/chatStore";
+import { Markdown } from "./Markdown";
+
+interface MessageItemProps {
+  item: Extract<ChatStreamItem, { kind: "message" }>;
+  isStreaming?: boolean;
+  onContextMenu: (e: React.MouseEvent, nodeId: string) => void;
+}
+
+export function MessageItem({ item, isStreaming, onContextMenu }: MessageItemProps) {
+  if (item.role === "user") {
+    return (
+      <div
+        className="flex justify-end"
+        onContextMenu={(e) => onContextMenu(e, item.nodeId)}
+      >
+        <div
+          className="max-w-[82%] rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-800"
+          style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+        >
+          {item.content}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="group/msg"
+      onContextMenu={(e) => onContextMenu(e, item.nodeId)}
+    >
+      <Markdown content={item.content} />
+      {isStreaming && <StreamingCursor />}
+    </div>
+  );
+}
+
+function StreamingCursor() {
+  return (
+    <span
+      className="ml-0.5 inline-block h-3.5 w-[7px] animate-pulse rounded-[1px] bg-neutral-400 align-text-bottom"
+      style={{ animationDuration: "0.8s" } as CSSProperties}
+    />
+  );
+}

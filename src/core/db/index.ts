@@ -13,7 +13,7 @@ import { GroupRepository } from "./repositories/groupRepo";
 import { NoteRepository } from "./repositories/noteRepo";
 import { SettingsRepository } from "./repositories/settingsRepo";
 
-export { NodeSqliteBackend, TauriSqlBackend, withTransaction } from "./backend";
+export { TauriSqlBackend, withTransaction, type SqlBackend } from "./backend";
 export * from "./types";
 export * from "./repositories/nodeRepo";
 export * from "./repositories/sessionRepo";

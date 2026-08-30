@@ -1,5 +1,5 @@
 /** 测试辅助：内存 SQLite + 完整仓库集合 */
-import { NodeSqliteBackend } from "../backend";
+import { NodeSqliteBackend } from "../backendNode";
 import { createRepositories, initSchema, type AppRepositories } from "../index";
 
 export async function createTestDb(): Promise<AppRepositories> {

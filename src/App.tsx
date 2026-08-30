@@ -15,6 +15,7 @@ import { GraphFullscreen } from "./components/graph/GraphFullscreen";
 import { SearchDialog } from "./components/modals/SearchDialog";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { PromptDialog } from "./components/common/PromptDialog";
+import { TextContextMenu } from "./components/common/TextContextMenu";
 
 export default function App() {
   const init = useChatStore((s) => s.init);
@@ -134,7 +135,11 @@ function AppContent({
   const focusPair = leftPanel === "graph" && focusMode && !graphFullscreen;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-neutral-800">
+    <div
+      className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-neutral-800"
+      // 全局阻止系统默认右键菜单（各区域显示自定义菜单）
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {/* 自定义标题栏（替换系统标题栏） */}
       <TitleBar />
       <div className="flex min-h-0 flex-1">
@@ -161,6 +166,9 @@ function AppContent({
       {/* 全局对话框（确认 / 输入） */}
       <ConfirmDialog />
       <PromptDialog />
+
+      {/* 文本编辑右键菜单（输入框 / 选中文本） */}
+      <TextContextMenu />
 
       {/* 左下角软提醒 */}
       {uiError && (

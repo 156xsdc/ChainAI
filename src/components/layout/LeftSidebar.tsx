@@ -32,7 +32,13 @@ export function LeftSidebar() {
               : "border-neutral-200 bg-neutral-50/60"
           }`}
         >
-          <TreeThumbnail onClick={() => setGraphOpen(true)} />
+          {/* 点击展开树状图，同时自动收起侧边栏 */}
+          <TreeThumbnail
+            onClick={() => {
+              setGraphOpen(true);
+              setSidebar("left", false);
+            }}
+          />
         </div>
       </div>
 

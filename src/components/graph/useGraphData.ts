@@ -24,9 +24,7 @@ export interface GraphData {
 export function useGraphData(): GraphData | null {
   const repos = useChatStore((s) => s.repos);
   const currentNodeId = useChatStore((s) => s.currentNodeId);
-  // path 变化代表对话/导航发生，触发重新加载
-  const path = useChatStore((s) => s.path);
-  // 分组/结构变化触发重新加载
+  // 结构变化触发重新加载（对话/导航改变 currentNodeId；删除/分组等显式 bump）
   const graphVersion = useGraphStore((s) => s.graphVersion);
   const [data, setData] = useState<GraphData | null>(null);
 
@@ -69,7 +67,7 @@ export function useGraphData(): GraphData | null {
     return () => {
       cancelled = true;
     };
-  }, [repos, currentNodeId, path, graphVersion]);
+  }, [repos, currentNodeId, graphVersion]);
 
   return data;
 }

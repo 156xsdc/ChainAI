@@ -41,7 +41,9 @@ export function InputCard() {
       setChildren([]);
       return;
     }
+    let cancelled = false;
     repos.nodes.getChildrenWithEdge(currentNodeId).then((cs) => {
+      if (cancelled) return;
       setChildren(
         cs.map((c) => ({
           nodeId: c.node.id,
@@ -52,7 +54,10 @@ export function InputCard() {
         }))
       );
     });
-  }, [repos, currentNodeId, streaming]);
+    return () => {
+      cancelled = true;
+    };
+  }, [repos, currentNodeId]);
 
   const handleSend = () => {
     if (!text.trim() || streaming || preparing) return;

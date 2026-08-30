@@ -18,6 +18,8 @@ export default function App() {
   const initError = useChatStore((s) => s.initError);
   const uiError = useChatStore((s) => s.uiError);
   const notice = useChatStore((s) => s.notice);
+  const noticeTone = useChatStore((s) => s.noticeTone);
+  const notifyDuration = useChatStore((s) => s.notifyDuration);
   const clearError = useChatStore((s) => s.clearError);
   const clearNotice = useChatStore((s) => s.clearNotice);
   const leftExpanded = useUIStore((s) => s.leftExpanded);
@@ -104,11 +106,17 @@ export default function App() {
         <SoftToast
           message={uiError}
           tone="error"
+          duration={notifyDuration}
           onClose={clearError}
         />
       )}
       {notice && (
-        <SoftToast message={notice} tone="success" onClose={clearNotice} />
+        <SoftToast
+          message={notice}
+          tone={noticeTone}
+          duration={notifyDuration}
+          onClose={clearNotice}
+        />
       )}
     </div>
   );
@@ -117,30 +125,29 @@ export default function App() {
 function SoftToast({
   message,
   tone,
+  duration,
   onClose,
 }: {
   message: string;
-  tone: "error" | "success";
+  tone: "error" | "success" | "info";
+  duration: number;
   onClose: () => void;
 }) {
   useEffect(() => {
-    const timer = setTimeout(onClose, 6000);
+    const timer = setTimeout(onClose, Math.max(2, duration) * 1000);
     return () => clearTimeout(timer);
-  }, [message, onClose]);
+  }, [message, duration, onClose]);
+
+  const textColor =
+    tone === "error"
+      ? "text-red-600"
+      : tone === "success"
+        ? "text-neutral-700"
+        : "text-neutral-600";
 
   return (
-    <div
-      className={`fixed bottom-4 left-4 z-50 flex max-w-[420px] items-start gap-2 rounded-2xl border bg-white px-4 py-3 shadow-lg ${
-        tone === "error" ? "border-neutral-200" : "border-neutral-200"
-      }`}
-    >
-      <span
-        className={`text-xs leading-relaxed ${
-          tone === "error" ? "text-neutral-600" : "text-neutral-700"
-        }`}
-      >
-        {message}
-      </span>
+    <div className="fixed bottom-4 left-4 z-50 flex max-w-[420px] items-start gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-lg">
+      <span className={`text-xs leading-relaxed ${textColor}`}>{message}</span>
       <button
         className="mt-0.5 shrink-0 text-neutral-300 hover:text-neutral-500"
         onClick={onClose}

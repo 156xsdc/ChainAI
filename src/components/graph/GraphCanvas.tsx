@@ -358,6 +358,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           fitViewOptions={{ padding: 0.25 }}
           minZoom={0.15}
           maxZoom={2.5}
+          onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
           className="bg-[#fafafa]"
         >

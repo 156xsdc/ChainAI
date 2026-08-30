@@ -98,9 +98,16 @@ interface ChatState {
   stopStreaming: () => void;
   setUiError: (msg: string) => void;
   clearError: () => void;
-  /** 成功通知（左下角 toast） */
+  /** 通知（左下角 toast） */
   notice: string | null;
-  setNotice: (msg: string) => void;
+  noticeTone: "success" | "info" | "error";
+  /** 通知类型开关（内存缓存，init 时加载） */
+  notifyTypes: { success: boolean; info: boolean };
+  /** 通知时长（秒，内存缓存） */
+  notifyDuration: number;
+  setNotice: (msg: string, tone?: "success" | "info" | "error") => void;
+  setNotifyTypes: (types: { success: boolean; info: boolean }) => void;
+  setNotifyDuration: (seconds: number) => void;
   clearNotice: () => void;
   /** 导出全部数据为 JSON 备份文件 */
   exportData: () => Promise<void>;
@@ -151,6 +158,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         []
       );
       providerManager.setConfigs(providerConfigs);
+
+      // 加载通知设置（类型开关 + 时长）
+      const notifySettings = await repos.settings.get<{
+        duration?: number;
+        types?: { success?: boolean; info?: boolean };
+      }>("notification", { duration: 6, types: { success: true, info: true } });
+      set({
+        notifyDuration: notifySettings.duration ?? 6,
+        notifyTypes: {
+          success: notifySettings.types?.success !== false,
+          info: notifySettings.types?.info !== false,
+        },
+      });
 
       // 恢复上次会话位置
       const saved = await repos.settings.get<string | null>(
@@ -320,6 +340,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (totalTokens > contextLimit) {
       set({
         notice: `💡 当前上下文约 ${Math.round(totalTokens / 1000)}k tokens，已接近 ${Math.round(contextLimit / 1000)}k 上限。建议点击「+分叉」创建新分支（可继承最近消息）继续讨论。`,
+        noticeTone: "info",
       });
     }
 
@@ -335,10 +356,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     streamController = controller;
     set({ preparing: false, streaming: true });
 
-    const updateBuffer = (text: string) =>
+    // 节流更新 UI（打字机关闭时限制渲染频率，降低 CPU 占用）
+    let lastRender = 0;
+    const updateBuffer = (text: string) => {
+      const now = Date.now();
+      if (now - lastRender < 80) return;
+      lastRender = now;
       set((s) => ({
         streamingBuffer: { ...s.streamingBuffer, [nodeId]: text },
       }));
+    };
 
     const typewriter =
       twSettings.enabled === false
@@ -459,6 +486,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } else {
       await get().refreshPath();
     }
+    // 树状图结构变化
+    useGraphStore.getState().bumpGraphVersion();
     return { deletedCount: descendants.length };
   },
 
@@ -470,7 +499,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   clearError: () => set({ uiError: null, initError: null }),
 
   notice: null,
-  setNotice: (msg) => set({ notice: msg }),
+  noticeTone: "success",
+  notifyTypes: { success: true, info: true },
+  notifyDuration: 6,
+  setNotice: (msg, tone = "success") => {
+    const { notifyTypes } = get();
+    if (tone === "success" && notifyTypes.success === false) return;
+    if (tone === "info" && notifyTypes.info === false) return;
+    set({ notice: msg, noticeTone: tone });
+  },
+  setNotifyTypes: (types) => set({ notifyTypes: types }),
+  setNotifyDuration: (seconds) => set({ notifyDuration: seconds }),
   clearNotice: () => set({ notice: null }),
 
   exportData: async () => {
@@ -591,7 +630,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
       await invoke("write_text_file", { path: file, content: json });
       await repos.settings.set("backup.lastBackupAt", new Date().toISOString());
-      if (!silent) set({ notice: `💾 已备份：${file}` });
+      if (!silent) set({ notice: `💾 已备份：${file}`, noticeTone: "info" });
     } catch {
       // 备份失败静默（不打断用户）
     }
@@ -635,6 +674,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         notice: `🧹 已清理 ${result.branches} 个不活跃分支（${result.nodes} 个节点）${
           purged > 0 ? `；回收站过期清理 ${purged} 项` : ""
         }`,
+        noticeTone: "info",
       });
     }
     return { branches: result.branches, nodes: result.nodes };

@@ -57,6 +57,9 @@ export function SettingsDialog({
   const [backupEnabled, setBackupEnabled] = useState(true);
   const [backupInterval, setBackupInterval] = useState(3);
   const [defaultInherit, setDefaultInherit] = useState(10);
+  const [notifyDuration, setNotifyDuration] = useState(6);
+  const [notifySuccess, setNotifySuccess] = useState(true);
+  const [notifyInfo, setNotifyInfo] = useState(true);
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
 
   useEffect(() => {
@@ -90,8 +93,32 @@ export function SettingsDialog({
         .getState()
         .repos?.settings.get<number>("ai.defaultInheritCount", 10)
         .then((v) => setDefaultInherit(v));
+      // 加载通知设置
+      void useChatStore
+        .getState()
+        .repos?.settings
+        .get<{ duration?: number; types?: { success?: boolean; info?: boolean } }>(
+          "notification",
+          { duration: 6, types: { success: true, info: true } }
+        )
+        .then((s) => {
+          setNotifyDuration(s.duration ?? 6);
+          setNotifySuccess(s.types?.success !== false);
+          setNotifyInfo(s.types?.info !== false);
+        });
     }
   }, [open]);
+
+  /** 保存通知设置（写库 + 更新 store 缓存） */
+  const saveNotification = (
+    duration: number,
+    types: { success: boolean; info: boolean }
+  ) => {
+    const cs = useChatStore.getState();
+    cs.repos?.settings.set("notification", { duration, types });
+    cs.setNotifyDuration(duration);
+    cs.setNotifyTypes(types);
+  };
 
   /** 保存清理设置 */
   const saveCleanup = (enabled: boolean, days: number) => {
@@ -210,6 +237,66 @@ export function SettingsDialog({
               </button>
             </div>
           ))}
+        </div>
+
+        {/* 通知设置 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 text-xs text-neutral-500">通知设置</div>
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-neutral-600">显示时长</span>
+              <select
+                className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
+                value={notifyDuration}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setNotifyDuration(v);
+                  saveNotification(v, {
+                    success: notifySuccess,
+                    info: notifyInfo,
+                  });
+                }}
+              >
+                <option value={3}>3 秒</option>
+                <option value={5}>5 秒</option>
+                <option value={8}>8 秒</option>
+                <option value={10}>10 秒</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-neutral-600">成功通知（收藏/分组/备份等）</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-neutral-800"
+                checked={notifySuccess}
+                onChange={(e) => {
+                  setNotifySuccess(e.target.checked);
+                  saveNotification(notifyDuration, {
+                    success: e.target.checked,
+                    info: notifyInfo,
+                  });
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-neutral-600">提示通知（清理/上下文耗尽等）</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-neutral-800"
+                checked={notifyInfo}
+                onChange={(e) => {
+                  setNotifyInfo(e.target.checked);
+                  saveNotification(notifyDuration, {
+                    success: notifySuccess,
+                    info: e.target.checked,
+                  });
+                }}
+              />
+            </div>
+            <div className="text-[10px] text-neutral-400">
+              错误通知始终显示，不在此控制
+            </div>
+          </div>
         </div>
 
         {/* 上下文设置 */}

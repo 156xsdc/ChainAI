@@ -1,7 +1,7 @@
 /**
  * 单条消息：用户（浅灰气泡）/ AI（Markdown 全文）
  */
-import type { CSSProperties } from "react";
+import { memo, type CSSProperties } from "react";
 import type { ChatStreamItem } from "../../store/chatStore";
 import { Markdown } from "./Markdown";
 
@@ -11,7 +11,11 @@ interface MessageItemProps {
   onContextMenu: (e: React.MouseEvent, nodeId: string) => void;
 }
 
-export function MessageItem({ item, isStreaming, onContextMenu }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({
+  item,
+  isStreaming,
+  onContextMenu,
+}: MessageItemProps) {
   if (item.role === "user") {
     return (
       <div
@@ -33,11 +37,18 @@ export function MessageItem({ item, isStreaming, onContextMenu }: MessageItemPro
       className="group/msg"
       onContextMenu={(e) => onContextMenu(e, item.nodeId)}
     >
-      <Markdown content={item.content} />
-      {isStreaming && <StreamingCursor />}
+      {isStreaming ? (
+        // 流式期间用纯文本渲染（省 CPU），结束后统一渲染 Markdown
+        <div className="text-[13.5px] leading-7 text-neutral-800 whitespace-pre-wrap">
+          {item.content}
+          <StreamingCursor />
+        </div>
+      ) : (
+        <Markdown content={item.content} />
+      )}
     </div>
   );
-}
+});
 
 function StreamingCursor() {
   return (

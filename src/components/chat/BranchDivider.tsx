@@ -3,6 +3,7 @@
  * 浅灰细线 + 小字，当前分支高亮，点击切换
  * 每个分支可删除（hover 显示 ✕），右侧 + 新建分支
  */
+import { memo } from "react";
 import { Plus, X } from "lucide-react";
 import type { BranchOption } from "../../store/chatStore";
 
@@ -14,7 +15,7 @@ interface BranchDividerProps {
   parentNodeId: string;
 }
 
-export function BranchDivider({
+export const BranchDivider = memo(function BranchDivider({
   children,
   onSelect,
   onAddBranch,
@@ -67,4 +68,4 @@ export function BranchDivider({
       <div className="h-px flex-1 bg-neutral-200" />
     </div>
   );
-}
+});

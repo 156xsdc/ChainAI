@@ -54,6 +54,14 @@ export function computeGitLayout(
     inDegree.set(e.childId, (inDegree.get(e.childId) ?? 0) + 1);
   }
 
+  // 预建：childId → parentIds 索引（避免循环内 filter，O(N·E) → O(N+E)）
+  const parentsOf = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!nodeSet.has(e.parentId) || !nodeSet.has(e.childId)) continue;
+    if (!parentsOf.has(e.childId)) parentsOf.set(e.childId, []);
+    parentsOf.get(e.childId)!.push(e.parentId);
+  }
+
   // 初始队列：所有入度为0的节点（根），按创建时间排序
   const queue = nodes
     .filter((n) => (inDegree.get(n.id) ?? 0) === 0)
@@ -109,9 +117,7 @@ export function computeGitLayout(
 
   for (const id of topoOrder) {
     const r = rowOf.get(id) ?? 0;
-    const parents = edges
-      .filter((e) => e.childId === id && nodeSet.has(e.parentId))
-      .map((e) => e.parentId);
+    const parents = parentsOf.get(id) ?? [];
 
     let lane: number;
     if (parents.length === 0) {

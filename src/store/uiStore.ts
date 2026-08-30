@@ -14,9 +14,12 @@ interface UIState {
   graphFullscreen: boolean;
   /** 树状图面板（聊天区左侧）是否展开 */
   graphOpen: boolean;
+  /** 全局搜索（Ctrl+P） */
+  searchOpen: boolean;
 
   toggleSidebar: (side: Side) => void;
   setGraphOpen: (v: boolean) => void;
+  setSearchOpen: (v: boolean) => void;
   setSidebar: (side: Side, expanded: boolean) => void;
   setGraphFullscreen: (v: boolean) => void;
 }
@@ -26,8 +29,10 @@ export const useUIStore = create<UIState>((set) => ({
   rightExpanded: false,
   graphFullscreen: false,
   graphOpen: false,
+  searchOpen: false,
 
   setGraphOpen: (v) => set({ graphOpen: v }),
+  setSearchOpen: (v) => set({ searchOpen: v }),
   toggleSidebar: (side) =>
     set((state) =>
       side === "left"

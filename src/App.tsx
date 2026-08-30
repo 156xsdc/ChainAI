@@ -11,6 +11,7 @@ import { LeftSidebar } from "./components/layout/LeftSidebar";
 import { RightSidebar } from "./components/layout/RightSidebar";
 import { GraphPanel } from "./components/graph/GraphPanel";
 import { GraphFullscreen } from "./components/graph/GraphFullscreen";
+import { SearchDialog } from "./components/modals/SearchDialog";
 
 export default function App() {
   const init = useChatStore((s) => s.init);
@@ -55,6 +56,9 @@ export default function App() {
       } else if (e.ctrlKey && e.key.toLowerCase() === "i") {
         e.preventDefault();
         void useChatStore.getState().importData();
+      } else if (e.ctrlKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        ui.setSearchOpen(!ui.searchOpen);
       }
     };
     window.addEventListener("keydown", handler);
@@ -91,6 +95,9 @@ export default function App() {
 
       {/* 树状图全屏 */}
       <GraphFullscreen />
+
+      {/* 全局搜索 */}
+      <SearchDialog />
 
       {/* 左下角软提醒 */}
       {uiError && (

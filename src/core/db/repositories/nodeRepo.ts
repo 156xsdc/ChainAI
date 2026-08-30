@@ -329,6 +329,19 @@ export class NodeRepository {
     return rows.map(rowToNode);
   }
 
+  /** 关键词搜索节点（问题/回答/摘要），按更新时间倒序 */
+  async search(keyword: string, limit = 50): Promise<TreeNode[]> {
+    const like = `%${keyword}%`;
+    const rows = await this.db.select<NodeRow>(
+      `SELECT * FROM nodes
+       WHERE is_active = 1 AND (question LIKE ? OR answer LIKE ? OR summary LIKE ?)
+       ORDER BY updated_at DESC, rowid DESC
+       LIMIT ?`,
+      [like, like, like, limit]
+    );
+    return rows.map(rowToNode);
+  }
+
   /** 全部活跃节点之间的边（树状图全局视图用） */
   async getAllActiveEdges(): Promise<TreeEdge[]> {
     const rows = await this.db.select<import("../types").EdgeRow>(

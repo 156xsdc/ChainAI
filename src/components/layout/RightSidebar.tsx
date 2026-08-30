@@ -6,6 +6,9 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronsRight, CornerUpRight, Plus, StickyNote, Trash2 } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
+
+const MIN_W = 220;
+const MAX_W = 420;
 import {
   deleteNoteFile,
   readNoteContent,
@@ -27,7 +30,44 @@ export function RightSidebar() {
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#fafafa");
   const [tagsText, setTagsText] = useState("");
+  const [width, setWidth] = useState(280);
+  const widthRef = useRef(width);
+  const dragRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 恢复保存的宽度
+  useEffect(() => {
+    if (!repos) return;
+    void repos.settings
+      .get<number>("layout.rightWidth", 280)
+      .then((w) => setWidth(w));
+  }, [repos]);
+
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
+
+  /** 拖拽调整宽度（手柄在左缘，向左拖加宽） */
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = true;
+    const startX = e.clientX;
+    const startW = width;
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      setWidth(Math.min(MAX_W, Math.max(MIN_W, startW + (startX - ev.clientX))));
+    };
+    const onUp = () => {
+      dragRef.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      useChatStore
+        .getState()
+        .repos?.settings.set("layout.rightWidth", widthRef.current);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const loadNotes = async () => {
     if (!repos) return;
@@ -100,7 +140,10 @@ export function RightSidebar() {
   const selected = notes.find((n) => n.id === selectedId);
 
   return (
-    <aside className="flex w-[280px] shrink-0 flex-col border-l border-neutral-200 bg-white">
+    <aside
+      className="relative flex shrink-0 flex-col border-l border-neutral-200 bg-white"
+      style={{ width }}
+    >
       {/* 标题栏 */}
       <div className="flex items-center justify-between border-b border-neutral-100 px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] text-neutral-400">
@@ -227,6 +270,13 @@ export function RightSidebar() {
           </div>
         </div>
       )}
+
+      {/* 拖拽调整宽度手柄 */}
+      <div
+        className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-neutral-300/70 active:bg-neutral-400"
+        onMouseDown={startDrag}
+        title="拖拽调整宽度"
+      />
     </aside>
   );
 }

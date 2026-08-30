@@ -9,6 +9,7 @@
     "sql:default",
     "sql:allow-execute",
     "dialog:default",
-    "core:path:default"
+    "core:path:default",
+    "core:window:default"
   ]
 }

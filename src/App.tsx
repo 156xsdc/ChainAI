@@ -7,6 +7,7 @@ import { useChatStore } from "./store/chatStore";
 import { useUIStore } from "./store/uiStore";
 import { ChatArea } from "./components/chat/ChatArea";
 import { Rail } from "./components/layout/Rail";
+import { TitleBar } from "./components/layout/TitleBar";
 import { FavoritesPanel } from "./components/layout/FavoritesPanel";
 import { RightSidebar } from "./components/layout/RightSidebar";
 import { GraphPanel } from "./components/graph/GraphPanel";
@@ -126,7 +127,10 @@ function AppContent({
   clearNotice: () => void;
 }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f5f5f5] text-neutral-800">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f5f5f5] text-neutral-800">
+      {/* 自定义标题栏（替换系统标题栏） */}
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
       <Rail side="left" />
       {leftPanel === "graph" && !graphFullscreen && <GraphPanel />}
       {leftPanel === "favorites" && <FavoritesPanel />}
@@ -134,6 +138,7 @@ function AppContent({
         <ChatArea />
       </main>
       {rightExpanded ? <RightSidebar /> : <Rail side="right" />}
+      </div>
 
       {/* 树状图全屏 */}
       <GraphFullscreen />

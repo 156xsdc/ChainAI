@@ -10,8 +10,10 @@ import {
   CornerUpRight,
   Folder,
   Plus,
+  Search,
   StickyNote,
   Trash2,
+  X,
 } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
@@ -46,6 +48,10 @@ export function RightSidebar() {
   const [color, setColor] = useState("#fafafa");
   const [tagsText, setTagsText] = useState("");
   const [category, setCategory] = useState("");
+  /** 颜色筛选（null = 全部） */
+  const [filterColor, setFilterColor] = useState<string | null>(null);
+  /** 标签搜索关键词 */
+  const [tagQuery, setTagQuery] = useState("");
   const [width, setWidth] = useState(280);
   const widthRef = useRef(width);
   const dragRef = useRef(false);
@@ -137,6 +143,19 @@ export function RightSidebar() {
     () => notes.filter((n) => (n.category || "") === currentDir),
     [notes, currentDir]
   );
+
+  /** 颜色 + 标签筛选后的便签 */
+  const filteredNotes = useMemo(() => {
+    const q = tagQuery.trim().toLowerCase();
+    return dirNotes.filter((n) => {
+      if (filterColor && n.color !== filterColor) return false;
+      if (q) {
+        const match = n.tags.some((t) => t.toLowerCase().includes(q));
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [dirNotes, filterColor, tagQuery]);
 
   const selected = notes.find((n) => n.id === selectedId);
 
@@ -459,20 +478,82 @@ export function RightSidebar() {
             </div>
           </div>
         ) : (
-          /* ===== 列表（当前目录） ===== */
+          /* ===== 列表（当前目录 + 筛选） ===== */
           <>
-            {dirNotes.length === 0 ? (
+            {/* 筛选工具栏：颜色 + 标签 */}
+            <div className="mb-2 flex flex-col gap-1.5 rounded-xl border border-neutral-100 bg-neutral-50/50 px-2 py-1.5">
+              {/* 颜色筛选 */}
+              <div className="flex items-center gap-1">
+                <button
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] ${
+                    filterColor === null
+                      ? "bg-neutral-800 text-white"
+                      : "text-neutral-400 hover:bg-neutral-100"
+                  }`}
+                  onClick={() => setFilterColor(null)}
+                >
+                  全部
+                </button>
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={`h-4 w-4 rounded-full border transition-transform ${
+                      filterColor === c
+                        ? "scale-110 border-neutral-700 ring-1 ring-neutral-700 ring-offset-1"
+                        : "border-neutral-200 hover:scale-105"
+                    }`}
+                    style={{ background: c }}
+                    title="按颜色筛选"
+                    onClick={() => setFilterColor(filterColor === c ? null : c)}
+                  />
+                ))}
+                {filterColor && (
+                  <button
+                    className="ml-auto shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                    title="清除筛选"
+                    onClick={() => setFilterColor(null)}
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
+              {/* 标签搜索 */}
+              <div className="flex items-center gap-1">
+                <Search size={11} className="shrink-0 text-neutral-300" />
+                <input
+                  value={tagQuery}
+                  onChange={(e) => setTagQuery(e.target.value)}
+                  placeholder="按标签搜索..."
+                  className="min-w-0 flex-1 bg-transparent text-[10px] text-neutral-600 outline-none placeholder:text-neutral-300"
+                />
+                {tagQuery && (
+                  <button
+                    className="shrink-0 rounded p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                    title="清除"
+                    onClick={() => setTagQuery("")}
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {filteredNotes.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <StickyNote size={26} strokeWidth={1} className="text-neutral-200" />
                 <div className="text-xs text-neutral-300">
-                  {notes.length === 0 ? "暂无便签" : "此目录暂无便签"}
+                  {dirNotes.length === 0
+                    ? notes.length === 0
+                      ? "暂无便签"
+                      : "此目录暂无便签"
+                    : "没有符合筛选的便签"}
                   <br />
                   {notes.length === 0 && "（右键消息或 ➕ 可创建）"}
                 </div>
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
-                {dirNotes.map((n) => (
+                {filteredNotes.map((n) => (
                   <div key={n.id} className="group/note relative">
                     <button
                       onClick={() => void selectNote(n)}

@@ -34,6 +34,20 @@ fn delete_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 写入二进制文件（PNG 导出用，base64 传入）
+#[tauri::command]
+fn write_binary_file(path: String, base64_content: String) -> Result<(), String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    let bytes = STANDARD
+        .decode(base64_content)
+        .map_err(|e| e.to_string())?;
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -44,7 +58,8 @@ pub fn run() {
             greet,
             read_text_file,
             write_text_file,
-            delete_file
+            delete_file,
+            write_binary_file
         ])
         .setup(|app| {
             setup_tray(app)?;

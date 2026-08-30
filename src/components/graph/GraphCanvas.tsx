@@ -11,17 +11,21 @@ import {
   Background,
   Controls,
   MiniMap,
+  getNodesBounds,
+  getViewportForBounds,
   type Edge,
   type NodeTypes,
   type OnNodeDrag,
   type OnSelectionChangeFunc,
   type ReactFlowInstance,
 } from "@xyflow/react";
+import { toPng } from "html-to-image";
 import "@xyflow/react/dist/style.css";
 import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { useGraphData } from "./useGraphData";
 import { summarizeNodeGroup } from "../../core/context/aiSummarizer";
+import { savePngFile } from "../../core/io/files";
 import { MergeDialog } from "../modals/MergeDialog";
 import { GraphNodeMenu } from "./GraphNodeMenu";
 import {
@@ -51,6 +55,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   const loadPositions = useGraphStore((s) => s.loadPositions);
   const bumpGraphVersion = useGraphStore((s) => s.bumpGraphVersion);
   const rfRef = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const prevCurrent = useRef<string | null>(null);
   const positionsLoaded = useRef(false);
   const [mergeState, setMergeState] = useState<{
@@ -206,6 +211,42 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     bumpGraphVersion();
   };
 
+  /** 导出画布为 PNG（html-to-image） */
+  const exportPng = async () => {
+    if (!containerRef.current) return;
+    try {
+      const allNodes = [...groupNodes, ...rfNodes];
+      const nodesBounds = getNodesBounds(allNodes);
+      const imageWidth = 1280;
+      const imageHeight = 960;
+      const viewport = getViewportForBounds(
+        nodesBounds,
+        imageWidth,
+        imageHeight,
+        0.5,
+        2,
+        0.1
+      );
+      const transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
+      const dataUrl = await toPng(containerRef.current, {
+        backgroundColor: "#fafafa",
+        width: imageWidth,
+        height: imageHeight,
+        style: {
+          width: `${imageWidth}px`,
+          height: `${imageHeight}px`,
+          transform,
+        },
+      });
+      const base64 = dataUrl.split(",")[1] ?? "";
+      const name = `chainai-graph-${new Date().toISOString().slice(0, 10)}.png`;
+      const saved = await savePngFile(name, base64);
+      if (saved) setNotice(`✅ 已导出 PNG：${saved}`);
+    } catch (err) {
+      setUiError(`导出 PNG 失败：${(err as Error).message}`);
+    }
+  };
+
   // ---- 数据组装 ----
   if (!data || data.nodes.length === 0) {
     return (
@@ -288,7 +329,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
 
   return (
     <>
-      <div className="relative h-full w-full">
+      <div ref={containerRef} className="relative h-full w-full">
         <ReactFlow
           nodes={[...groupNodes, ...rfNodes]}
           edges={rfEdges}
@@ -322,6 +363,13 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         >
           <Background color="#e5e5e5" gap={24} size={1} />
           <Controls showInteractive={false} position="bottom-left" />
+          <button
+            className="absolute bottom-3 right-3 z-10 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-[11px] text-neutral-500 shadow-sm hover:bg-neutral-100"
+            onClick={() => void exportPng()}
+            title="导出为 PNG 图片"
+          >
+            🖼 导出 PNG
+          </button>
           {!fullscreen && (
             <MiniMap
               pannable

@@ -54,3 +54,18 @@ export async function openTextFile(filters: {
   const content = await invoke<string>("read_text_file", { path });
   return { path: path as string, content };
 }
+
+/** 保存 PNG 文件（base64 内容） */
+export async function savePngFile(
+  defaultName: string,
+  base64Content: string
+): Promise<string | null> {
+  if (!inTauri) return null;
+  const path = await save({
+    defaultPath: defaultName,
+    filters: [{ name: "PNG 图片", extensions: ["png"] }],
+  });
+  if (!path) return null;
+  await invoke("write_binary_file", { path, base64Content });
+  return path as string;
+}

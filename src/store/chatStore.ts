@@ -11,6 +11,7 @@ import type { ChatMessage } from "../core/ai/types";
 import { Typewriter } from "../core/typing/typewriter";
 import { buildContext, type ContextMessage } from "../core/context/builder";
 import { summarizeGroup } from "../core/context/aiCompressor";
+import { estimateMessagesTokens } from "../core/context/tokenEstimate";
 import { exportAll, importAll } from "../core/importExport/service";
 import {
   exportTreeToMarkdown,
@@ -300,6 +301,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       recentKeep: compressSettings.recentKeep ?? 5,
       compressFn: (group) => summarizeGroup(group, config),
     });
+
+    // 上下文耗尽提示：估算 token 用量
+    const totalTokens = estimateMessagesTokens(messages);
+    const contextLimit = await repos.settings.get<number>(
+      "ai.contextLimit",
+      8000
+    );
+    if (totalTokens > contextLimit) {
+      set({
+        notice: `💡 当前上下文约 ${Math.round(totalTokens / 1000)}k tokens，已接近 ${Math.round(contextLimit / 1000)}k 上限。建议点击「+分叉」创建新分支（可继承最近消息）继续讨论。`,
+      });
+    }
 
     // 打字机设置（render.typewriter）
     const twSettings = await repos.settings.get<{

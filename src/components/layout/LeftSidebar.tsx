@@ -3,10 +3,9 @@
  * 上半：树状图缩略图（占位）｜中部：收藏夹｜底部：设置 + 收起
  */
 import { useEffect, useRef, useState } from "react";
-import { ChevronsLeft, Settings, TreePine } from "lucide-react";
+import { ChevronsLeft, TreePine } from "lucide-react";
 import { useUIStore } from "../../store/uiStore";
 import { useChatStore } from "../../store/chatStore";
-import { SettingsDialog } from "../modals/SettingsDialog";
 import { TreeThumbnail } from "../graph/TreeThumbnail";
 import { FavoritesSection } from "./FavoritesSection";
 
@@ -18,7 +17,6 @@ export function LeftSidebar() {
   const setGraphOpen = useUIStore((s) => s.setGraphOpen);
   const graphOpen = useUIStore((s) => s.graphOpen);
   const repos = useChatStore((s) => s.repos);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [width, setWidth] = useState(250);
   const widthRef = useRef(width);
   const dragging = useRef(false);
@@ -90,24 +88,16 @@ export function LeftSidebar() {
       {/* 收藏夹（分组管理） */}
       <FavoritesSection />
 
-      {/* 底部：设置 + 收起 */}
-      <div className="flex items-center justify-between border-t border-neutral-100 p-2">
-        <button
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-neutral-500 hover:bg-neutral-100"
-          onClick={() => setSettingsOpen(true)}
-        >
-          <Settings size={13} /> 设置
-        </button>
+      {/* 底部：收起（设置入口在输入卡片上方 ⚙） */}
+      <div className="flex items-center justify-end border-t border-neutral-100 p-2">
         <button
           className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-neutral-500 hover:bg-neutral-100"
           onClick={() => setSidebar("left", false)}
           title="收起 (Ctrl+B)"
         >
-          <ChevronsLeft size={13} />
+          <ChevronsLeft size={13} /> 收起
         </button>
       </div>
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* 拖拽调整宽度手柄 */}
       <div

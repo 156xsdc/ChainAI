@@ -2,7 +2,7 @@
  * 树状图面板：位于聊天区左侧，可拖动调整宽度
  * 顶部含树管理（切换/新建/重命名/删除）
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   LayoutTemplate,
@@ -26,6 +26,8 @@ const MAX_W = 640;
 export function GraphPanel() {
   const setLeftPanel = useUIStore((s) => s.setLeftPanel);
   const setGraphFullscreen = useUIStore((s) => s.setGraphFullscreen);
+  const leftPanelWidth = useUIStore((s) => s.leftPanelWidth);
+  const setLeftPanelWidth = useUIStore((s) => s.setLeftPanelWidth);
   const resetLayout = useGraphStore((s) => s.resetLayout);
   const clearAllChat = useChatStore((s) => s.clearAllChat);
   const trees = useChatStore((s) => s.trees);
@@ -34,13 +36,28 @@ export function GraphPanel() {
   const renameTree = useChatStore((s) => s.renameTree);
   const deleteTree = useChatStore((s) => s.deleteTree);
   const switchTree = useChatStore((s) => s.switchTree);
-  const [width, setWidth] = useState(380);
+  const widthRef = useRef(leftPanelWidth);
   const dragging = useRef(false);
+  const loadedWidth = useRef(false);
   const [treeMenuOpen, setTreeMenuOpen] = useState(false);
   const treeMenuRef = useClickOutside<HTMLDivElement>(
     () => setTreeMenuOpen(false),
     treeMenuOpen
   );
+
+  useEffect(() => {
+    widthRef.current = leftPanelWidth;
+  }, [leftPanelWidth]);
+
+  // 初始化：读取持久化的共享宽度（仅一次）
+  useEffect(() => {
+    if (loadedWidth.current) return;
+    loadedWidth.current = true;
+    void useChatStore
+      .getState()
+      .repos?.settings.get<number>("layout.leftPanelWidth", 380)
+      .then((w) => setLeftPanelWidth(w));
+  }, [setLeftPanelWidth]);
 
   const currentTree = trees.find((t) => t.id === currentTreeId);
 
@@ -97,17 +114,21 @@ export function GraphPanel() {
     e.preventDefault();
     dragging.current = true;
     const startX = e.clientX;
-    const startW = width;
+    const startW = leftPanelWidth;
 
     const onMove = (ev: MouseEvent) => {
       if (!dragging.current) return;
       const next = Math.min(MAX_W, Math.max(MIN_W, startW + (ev.clientX - startX)));
-      setWidth(next);
+      setLeftPanelWidth(next);
     };
     const onUp = () => {
       dragging.current = false;
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      // 持久化共享宽度（收藏面板同时生效）
+      useChatStore
+        .getState()
+        .repos?.settings.set("layout.leftPanelWidth", widthRef.current);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -116,7 +137,7 @@ export function GraphPanel() {
   return (
     <div
       className="relative flex shrink-0 flex-col border-r border-neutral-200 bg-white"
-      style={{ width }}
+      style={{ width: leftPanelWidth }}
     >
       {/* 标题栏：树管理 + 操作 */}
       <div className="relative flex items-center justify-between border-b border-neutral-100 px-2 py-1.5">

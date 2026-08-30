@@ -19,8 +19,8 @@ export function Rail({ side }: RailProps) {
   if (isLeft) {
     return (
       <div className="flex w-[40px] shrink-0 flex-col items-center border-r border-neutral-200 bg-neutral-50">
-        <div className="flex-1" />
-        <div className="mb-3 flex flex-col items-center gap-1.5">
+        {/* 图标工具栏：置于最上方 */}
+        <div className="mt-2 flex flex-col items-center gap-1.5">
           <RailIcon
             icon={<TreePine size={16} strokeWidth={1.6} />}
             title="树状图"
@@ -34,6 +34,7 @@ export function Rail({ side }: RailProps) {
             onClick={() => toggleLeftPanel("favorites")}
           />
         </div>
+        <div className="flex-1" />
       </div>
     );
   }

@@ -15,12 +15,15 @@ interface UIState {
   graphFullscreen: boolean;
   /** 全局搜索（Ctrl+P） */
   searchOpen: boolean;
+  /** 左侧面板共享宽度（树状图/收藏 共用，拖宽互通） */
+  leftPanelWidth: number;
 
   setLeftPanel: (p: LeftPanel) => void;
   toggleLeftPanel: (p: Exclude<LeftPanel, null>) => void;
   setSidebar: (side: Side, expanded: boolean) => void;
   setGraphFullscreen: (v: boolean) => void;
   setSearchOpen: (v: boolean) => void;
+  setLeftPanelWidth: (w: number) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -28,8 +31,10 @@ export const useUIStore = create<UIState>((set) => ({
   rightExpanded: false,
   graphFullscreen: false,
   searchOpen: false,
+  leftPanelWidth: 380,
 
   setLeftPanel: (p) => set({ leftPanel: p }),
+  setLeftPanelWidth: (w) => set({ leftPanelWidth: w }),
   toggleLeftPanel: (p) =>
     set((s) => ({ leftPanel: s.leftPanel === p ? null : p })),
   setSidebar: (side, expanded) =>

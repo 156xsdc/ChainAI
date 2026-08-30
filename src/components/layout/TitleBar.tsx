@@ -39,10 +39,10 @@ export function TitleBar() {
       {/* 左侧：应用标识 */}
       <div data-tauri-drag-region className="flex items-center gap-1.5 text-[11px]">
         <span className="font-semibold tracking-wide text-neutral-700">
-          ChainAI
+          通途
         </span>
         <span className="text-neutral-300">·</span>
-        <span className="text-neutral-400">树状对话</span>
+        <span className="text-neutral-400">学海无涯，大道通途</span>
       </div>
 
       {/* 右侧：窗口控制 */}

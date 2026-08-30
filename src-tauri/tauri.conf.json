@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "chainai",
+  "productName": "tongtu",
   "version": "0.1.0",
   "identifier": "com.16576.chainai",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "ChainAI - 树状对话",
+        "title": "通途 · 树状对话",
         "width": 1280,
         "height": 800,
         "minWidth": 960,

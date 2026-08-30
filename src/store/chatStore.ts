@@ -630,7 +630,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!repos) return;
     try {
       const json = await exportAll(repos);
-      const fileName = `chainai-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const fileName = `tongtu-backup-${new Date().toISOString().slice(0, 10)}.json`;
       const path = await saveJsonFile(fileName, json);
       if (path) set({ notice: `✅ 已导出备份：${path}` });
     } catch (err) {
@@ -893,7 +893,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const path = await repos.nodes.getPathToRoot(currentNodeId);
       const rootId = path[0]?.node.id ?? currentNodeId;
       const md = await exportTreeToMarkdown(repos, rootId);
-      const name = `chainai-${new Date().toISOString().slice(0, 10)}.md`;
+      const name = `tongtu-${new Date().toISOString().slice(0, 10)}.md`;
       const saved = await saveTextFile(name, md, [
         { name: "Markdown", extensions: ["md"] },
       ]);
@@ -935,7 +935,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const dir = await join(doc, "AITreeBackups");
       const file = await join(
         dir,
-        `chainai-backup-${new Date().toISOString().slice(0, 10)}.json`
+        `tongtu-backup-${new Date().toISOString().slice(0, 10)}.json`
       );
       await invoke("write_text_file", { path: file, content: json });
       await repos.settings.set("backup.lastBackupAt", new Date().toISOString());

@@ -100,10 +100,16 @@ export function MessageList() {
           if (item.kind === "message") {
             const isStreamingThis =
               isLast && streaming && item.role === "assistant";
+            // 动态合并流式内容（重新生成/版本切换时 streamingBuffer 覆盖显示）
+            const streamed = streamingBuffer[item.nodeId];
+            const displayItem =
+              streamed !== undefined
+                ? { ...item, content: streamed }
+                : item;
             return (
               <div key={`${item.nodeId}-${item.role}-${i}`} data-message>
                 <MessageItem
-                  item={item}
+                  item={displayItem}
                   isStreaming={isStreamingThis}
                   onContextMenu={(e, nodeId) => {
                     e.preventDefault();

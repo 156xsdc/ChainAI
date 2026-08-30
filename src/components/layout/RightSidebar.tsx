@@ -3,7 +3,7 @@
  * - 目录树：根目录 + 分类子目录（点击筛选）
  * - 点击便签进入编辑，可返回列表
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronsRight,
@@ -44,6 +44,7 @@ export function RightSidebar() {
   const [color, setColor] = useState("#fafafa");
   const [tagsText, setTagsText] = useState("");
   const [category, setCategory] = useState("");
+  const [, forceRender] = useReducer((x: number) => x + 1, 0);
   const [width, setWidth] = useState(280);
   const widthRef = useRef(width);
   const dragRef = useRef(false);
@@ -173,6 +174,19 @@ export function RightSidebar() {
     await moveNoteFile(repos, note, v);
     setSelectedDir(v.trim());
     void loadNotes();
+  };
+
+  /** 分类下拉选择：现有目录 / 新建分类 */
+  const handleCategorySelect = (v: string) => {
+    if (v === "__new__") {
+      const name = window.prompt("新建分类目录名称", "");
+      if (name && name.trim()) {
+        void handleCategoryChange(name.trim());
+      }
+      forceRender(); // 取消时让 select 回到当前值
+    } else {
+      void handleCategoryChange(v);
+    }
   };
 
   const handleDelete = async (note?: Note) => {
@@ -307,15 +321,25 @@ export function RightSidebar() {
               />
             </div>
 
-            {/* 分类子目录 */}
+            {/* 分类子目录（下拉选择） */}
             <div className="flex items-center gap-1.5 pb-2">
               <Folder size={11} className="shrink-0 text-neutral-300" />
-              <input
+              <select
                 value={category}
-                onChange={(e) => void handleCategoryChange(e.target.value)}
-                className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-0.5 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
-                placeholder="分类子目录（留空=根目录）"
-              />
+                onChange={(e) => handleCategorySelect(e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-neutral-100 bg-neutral-50 px-2 py-1 text-[10px] text-neutral-500 outline-none focus:border-neutral-300"
+                title="分类子目录"
+              >
+                <option value="">根目录</option>
+                {dirs
+                  .filter((d) => d !== "")
+                  .map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                <option value="__new__">➕ 新建分类...</option>
+              </select>
             </div>
 
             <textarea

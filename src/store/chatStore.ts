@@ -117,6 +117,9 @@ interface ChatState {
   createNoteFromMessage: (nodeId: string) => Promise<Note | null>;
   /** 创建空白便签 */
   createBlankNote: () => Promise<Note | null>;
+  /** 便签变化版本号（便签板实时刷新） */
+  noteVersion: number;
+  bumpNoteVersion: () => void;
   /** 立即执行一次自动清理 */
   cleanupNow: () => Promise<{ branches: number; nodes: number } | null>;
   /** 导出当前整棵树为 Markdown 文档 */
@@ -502,6 +505,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   noticeTone: "success",
   notifyTypes: { success: true, info: true },
   notifyDuration: 6,
+  noteVersion: 0,
+
+  bumpNoteVersion: () => set((s) => ({ noteVersion: s.noteVersion + 1 })),
   setNotice: (msg, tone = "success") => {
     const { notifyTypes } = get();
     if (tone === "success" && notifyTypes.success === false) return;
@@ -560,6 +566,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (note) {
       useUIStore.getState().setSidebar("right", true);
       set({ notice: "📝 已创建便签" });
+      get().bumpNoteVersion();
     }
     return note;
   },
@@ -570,6 +577,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const note = await createNoteFile(repos, { title: "新便签", content: "" });
     if (note) {
       useUIStore.getState().setSidebar("right", true);
+      get().bumpNoteVersion();
     }
     return note;
   },

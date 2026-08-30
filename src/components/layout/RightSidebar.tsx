@@ -24,6 +24,8 @@ export function RightSidebar() {
   const repos = useChatStore((s) => s.repos);
   const createBlankNote = useChatStore((s) => s.createBlankNote);
   const navigateTo = useChatStore((s) => s.navigateTo);
+  const noteVersion = useChatStore((s) => s.noteVersion);
+  const bumpNoteVersion = useChatStore((s) => s.bumpNoteVersion);
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -79,7 +81,7 @@ export function RightSidebar() {
 
   useEffect(() => {
     void loadNotes();
-  }, [repos]);
+  }, [repos, noteVersion]);
 
   // 选中便签 → 加载内容
   const selectNote = async (note: Note) => {
@@ -154,13 +156,14 @@ export function RightSidebar() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!repos || !selectedId) return;
-    const note = notes.find((n) => n.id === selectedId);
-    if (!note) return;
-    if (!window.confirm(`删除便签「${note.title}」？（文件 ${note.filePath}）`)) return;
-    await deleteNoteFile(repos, note);
-    setSelectedId(null);
+  const handleDelete = async (note?: Note) => {
+    if (!repos) return;
+    const target = note ?? notes.find((n) => n.id === selectedId);
+    if (!target) return;
+    if (!window.confirm(`删除便签「${target.title}」？（文件 ${target.filePath}）`)) return;
+    await deleteNoteFile(repos, target);
+    if (selectedId === target.id) setSelectedId(null);
+    bumpNoteVersion();
     void loadNotes();
   };
 
@@ -218,30 +221,45 @@ export function RightSidebar() {
               </div>
               <div className="flex flex-col gap-1.5">
                 {items.map((n) => (
-                  <button
+                  <div
                     key={n.id}
-                    onClick={() => void selectNote(n)}
-                    className="flex w-full items-start gap-2 rounded-xl border border-neutral-200 px-2.5 py-2 text-left hover:border-neutral-300 hover:shadow-sm"
-                    style={{ background: n.color }}
+                    className="group/note relative"
                   >
-                    <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full" style={{ background: "#b0b0b0" }} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-medium text-neutral-800">
-                        {n.title || "未命名便签"}
+                    <button
+                      onClick={() => void selectNote(n)}
+                      className="flex w-full items-start gap-2 rounded-xl border border-neutral-200 px-2.5 py-2 text-left hover:border-neutral-300 hover:shadow-sm"
+                      style={{ background: n.color }}
+                    >
+                      <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full" style={{ background: "#b0b0b0" }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium text-neutral-800">
+                          {n.title || "未命名便签"}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[10px] text-neutral-400">
+                          {n.tags.length > 0 ? `#${n.tags.join(" #")}` : new Date(n.updatedAt).toLocaleString()}
+                        </span>
                       </span>
-                      <span className="mt-0.5 block truncate text-[10px] text-neutral-400">
-                        {n.tags.length > 0 ? `#${n.tags.join(" #")}` : new Date(n.updatedAt).toLocaleString()}
-                      </span>
-                    </span>
-                    {n.nodeId && (
-                      <span
-                        className="shrink-0 rounded bg-neutral-200/60 px-1 text-[9px] text-neutral-500"
-                        title="已关联对话节点"
-                      >
-                        节点
-                      </span>
-                    )}
-                  </button>
+                      {n.nodeId && (
+                        <span
+                          className="shrink-0 rounded bg-neutral-200/60 px-1 text-[9px] text-neutral-500"
+                          title="已关联对话节点"
+                        >
+                          节点
+                        </span>
+                      )}
+                    </button>
+                    {/* 列表项快捷删除 */}
+                    <button
+                      className="absolute right-1.5 top-1.5 hidden h-5 w-5 items-center justify-center rounded-md bg-white/90 text-neutral-400 shadow-sm hover:bg-red-50 hover:text-red-500 group-hover/note:flex"
+                      title="删除便签"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(n);
+                      }}
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

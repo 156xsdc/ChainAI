@@ -343,7 +343,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         id: e.id,
         source: e.parentId,
         target: e.childId,
-        type: "straight",
+        type: "smoothstep",
         style:
           e.relationType === "non_inherit"
             ? { stroke: "#dedede", strokeDasharray: "4 3", strokeWidth: 1 }

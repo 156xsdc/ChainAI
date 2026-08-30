@@ -135,8 +135,17 @@ export function MessageList() {
           );
         })}
 
-        {/* 发送中的状态：准备上下文 / AI 生成（打字机） */}
-        {(preparing || streaming) && currentNodeId && (
+        {/* 发送中的状态：准备上下文 / AI 生成（打字机）
+            仅当当前节点的 AI 消息尚未出现在消息流中（发送新消息），
+            重新生成现有节点时消息流内已实时显示，避免重复 */}
+        {(preparing || streaming) &&
+          currentNodeId &&
+          !path.some(
+            (it) =>
+              it.kind === "message" &&
+              it.role === "assistant" &&
+              it.nodeId === currentNodeId
+          ) && (
           <div key="generating" data-message>
             {preparing ? (
               <div className="flex items-center gap-2 py-1 text-xs text-neutral-400">

@@ -55,7 +55,7 @@ export class TreeService {
   /** 在父节点下追加普通子节点（同会话内线性继续，继承上下文） */
   async addChild(
     parentNodeId: string,
-    input: { question?: string; answer?: string; type?: NodeType; color?: string; treeId?: string | null } = {}
+    input: { question?: string; answer?: string; type?: NodeType; color?: string; treeId?: string | null; quote?: string } = {}
   ): Promise<{ node: TreeNode; edge: TreeEdge }> {
     const node = await this.nodes.createNode({
       question: input.question ?? "",
@@ -63,6 +63,7 @@ export class TreeService {
       type: input.type ?? "normal",
       color: input.color,
       treeId: input.treeId,
+      quote: input.quote,
     });
     try {
       const edge = await this.nodes.addEdge(parentNodeId, node.id, "inherit");

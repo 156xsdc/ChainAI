@@ -413,7 +413,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       recentKeep?: number;
     }>("ai.contextCompression", { enabled: true, recentKeep: 5 });
 
-    const fullCtx = await treeService.getContextPath(nodeId);
+    // 合并节点（多父）：每条父链各继承最近 N 条，避免全局截断只剩一条链
+    const parentLinks = await repos.nodes.getParentsWithEdge(nodeId);
+    const isMergeNode = parentLinks.length > 1;
+    const fullCtx = isMergeNode
+      ? await treeService.getMergeContextPath(nodeId, Math.max(1, inheritCount))
+      : await treeService.getContextPath(nodeId);
     const contextMessages: ContextMessage[] = fullCtx.map((m) => ({
       role: m.role,
       content: m.content,
@@ -421,7 +426,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // 压缩摘要需要额外的 AI 调用（历史较长时）
     const messages: ChatMessage[] = await buildContext(contextMessages, {
-      inheritMode,
+      // 合并节点已按每链截断；传 all 避免全局 slice 二次截断
+      inheritMode: isMergeNode ? "all" : inheritMode,
       inheritCount,
       compress: compressSettings.enabled,
       recentKeep: compressSettings.recentKeep ?? 5,

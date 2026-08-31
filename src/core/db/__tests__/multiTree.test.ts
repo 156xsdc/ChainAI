@@ -135,6 +135,33 @@ describe("多树场景", () => {
     ).toContain(merged.id);
   });
 
+  it("getMergeContextPath 每条父链各取最近 N 条（不被全局截断成单链）", async () => {
+    const repos = await createTestDb();
+    const service = new TreeService(repos.backend, repos.nodes, repos.sessions);
+
+    // 两条链各 3 轮（消息超过 N）
+    const root = await repos.nodes.createNode({ question: "根问题", answer: "根回答" });
+    const a = await service.addChild(root.id, { question: "A问题", answer: "A回答" });
+    const a1 = await service.addChild(a.node.id, { question: "A1问题", answer: "A1回答" });
+    const a2 = await service.addChild(a1.node.id, { question: "A2问题", answer: "A2回答" });
+    const b = await service.addChild(root.id, { question: "B问题", answer: "B回答" });
+    const b1 = await service.addChild(b.node.id, { question: "B1问题", answer: "B1回答" });
+    const b2 = await service.addChild(b1.node.id, { question: "B2问题", answer: "B2回答" });
+    const { node: m } = await service.createMerge([a2.node.id, b2.node.id], {});
+
+    const ctx = await service.getMergeContextPath(m.id, 2);
+    const contents = ctx.map((c) => c.content);
+
+    // 两条链的最近 2 条都在（A2/B2 是各自的最近节点）
+    expect(contents).toContain("A2问题");
+    expect(contents).toContain("B2问题");
+    // 更早的链消息被每链截断（A/B 不在最近 2 条内）
+    expect(contents).not.toContain("A问题");
+    expect(contents).not.toContain("B问题");
+    // 合并节点自身消息在列
+    expect(contents.length).toBeGreaterThan(0);
+  });
+
   it("getAncestors 返回合并节点的所有父链祖先（多父展开）", async () => {
     const repos = await createTestDb();
     const service = new TreeService(repos.backend, repos.nodes, repos.sessions);

@@ -200,6 +200,69 @@ export class TreeService {
     }));
   }
 
+  /**
+   * 合并节点上下文：每条父链各取最近 N 条消息，合并去重后按时间排序。
+   * 与 getContextPath（全量综合）的区别：按"每链 N 条"截断，
+   * 避免全局 slice 把后创建的父链全部截掉（只剩一条链）。
+   */
+  async getMergeContextPath(
+    nodeId: string,
+    perChainCount: number
+  ): Promise<Array<{ role: "user" | "assistant"; content: string; nodeId: string }>> {
+    const parents = await this.nodes.getParentsWithEdge(nodeId);
+    const entries: Array<{
+      nodeId: string;
+      role: "user" | "assistant";
+      content: string;
+      createdAt: string;
+    }> = [];
+    const seen = new Set<string>();
+    const n = Math.max(1, perChainCount);
+    for (const p of parents) {
+      // 该父链从根到父的完整路径（含父自身）
+      const path = await this.nodes.getPathToRoot(p.parent.id);
+      const chain: Array<{
+        nodeId: string;
+        role: "user" | "assistant";
+        content: string;
+        createdAt: string;
+      }> = [];
+      for (const seg of path) {
+        const nd = seg.node;
+        if (nd.question) {
+          chain.push({
+            nodeId: nd.id,
+            role: "user",
+            content: nd.question,
+            createdAt: nd.createdAt,
+          });
+        }
+        if (nd.answer) {
+          chain.push({
+            nodeId: nd.id,
+            role: "assistant",
+            content: nd.answer,
+            createdAt: nd.createdAt,
+          });
+        }
+      }
+      // 每条链取最近 N 条消息
+      for (const e of chain.slice(-n)) {
+        if (seen.has(e.nodeId)) continue;
+        seen.add(e.nodeId);
+        entries.push(e);
+      }
+    }
+    // 合并节点自身消息
+    await this.pushNodeMessages(nodeId, seen, entries);
+    entries.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return entries.map((e) => ({
+      role: e.role,
+      content: e.content,
+      nodeId: e.nodeId,
+    }));
+  }
+
   /** 递归收集祖先消息：多父节点展开所有父链，单父/根沿主链回溯 */
   private async collectAncestors(
     nodeId: string,

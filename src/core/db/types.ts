@@ -19,6 +19,8 @@ export interface NodeRow {
   is_favorited: number;
   is_active: number;
   answer_version: number;
+  /** 用户引用的 AI 回答片段（随问题持久化显示） */
+  quote: string;
   created_at: string;
   updated_at: string;
 }
@@ -37,6 +39,8 @@ export interface TreeNode {
   isKept: boolean;
   isFavorited: boolean;
   isActive: boolean;
+  /** 引用的 AI 回答片段（空串 = 无引用） */
+  quote: string;
   createdAt: string;
   updatedAt: string;
 }

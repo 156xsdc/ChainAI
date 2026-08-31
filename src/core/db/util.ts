@@ -37,6 +37,7 @@ export function rowToNode(row: NodeRow): TreeNode {
     isFavorited: row.is_favorited === 1,
     isActive: row.is_active === 1,
     answerVersion: row.answer_version ?? 1,
+    quote: row.quote ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -108,11 +108,25 @@ export const MessageItem = memo(function MessageItem({
         className="flex justify-end"
         onContextMenu={(e) => onContextMenu(e, item.nodeId)}
       >
-        <div
-          className="max-w-[82%] select-text rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-800"
-          style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-        >
-          {item.content}
+        <div className="max-w-[82%]">
+          <div
+            className="select-text rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-800"
+            style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+          >
+            {item.content}
+          </div>
+          {/* 引用内容：钉在发送的消息下方，单行截断 */}
+          {item.quote && (
+            <div
+              className="mt-1 flex select-text items-center gap-1.5 rounded-lg border border-neutral-200 border-l-2 border-l-neutral-400 bg-neutral-50 px-2.5 py-1.5"
+              title={item.quote}
+            >
+              <Quote size={10} className="shrink-0 text-neutral-400" />
+              <span className="truncate text-[11px] leading-relaxed text-neutral-500">
+                {item.quote}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -23,6 +23,7 @@ export const SCHEMA_SQL: string[] = [
     is_kept      INTEGER NOT NULL DEFAULT 0,
     is_favorited INTEGER NOT NULL DEFAULT 0,
     is_active    INTEGER NOT NULL DEFAULT 1,
+    quote        TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
   )`,

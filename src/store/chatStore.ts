@@ -49,6 +49,8 @@ export type ChatStreamItem =
       role: "user" | "assistant";
       nodeId: string;
       content: string;
+      /** 引用的 AI 回答片段（用户消息下展示） */
+      quote?: string;
       /** 是否已收藏（用于消息操作条显示状态） */
       isFavorited?: boolean;
       /** 是否已保留标记 */
@@ -288,6 +290,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           role: "user",
           nodeId: node.id,
           content: node.question,
+          quote: node.quote || undefined,
         });
       }
       const streamed = streamingBuffer[node.id];
@@ -365,6 +368,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ currentTreeId: treeId });
     }
 
+    const quote = get().quote;
     const config = providerManager.getActiveConfig();
     if (!config) {
       set({ uiError: "尚未配置 AI 服务，请点击输入卡片左侧的 ⚙ 进行设置" });
@@ -378,6 +382,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const node = await repos.nodes.createNode({
           question: trimmed,
           treeId,
+          quote: quote?.text,
         });
         nodeId = node.id;
         set({ currentNodeId: nodeId });
@@ -385,12 +390,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const cur = await repos.nodes.getNode(nodeId);
         if (cur && !cur.question && !cur.answer) {
           // 空节点（刚创建的分支/新开始），直接填入
-          await repos.nodes.updateNode(nodeId, { question: trimmed });
+          await repos.nodes.updateNode(nodeId, {
+            question: trimmed,
+            quote: quote?.text,
+          });
         } else {
           // 已有问答：创建子节点继续
           const { node } = await treeService.addChild(nodeId, {
             question: trimmed,
             treeId,
+            quote: quote?.text,
           });
           nodeId = node.id;
           set({ currentNodeId: nodeId });
@@ -444,7 +453,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     // 引用：把选中内容及其出处问答注入上下文，替换原问题为带引用的提问
-    const quote = get().quote;
     if (quote) {
       // 移除末尾的用户消息（原问题），由引用提问替代
       while (messages.length > 0 && messages[messages.length - 1].role === "user") {

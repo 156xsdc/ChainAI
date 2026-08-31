@@ -73,6 +73,14 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 列已存在
   }
+  // 兼容旧库：nodes 表补充 quote 列（引用功能，已存在则忽略）
+  try {
+    await db.execute(
+      `ALTER TABLE nodes ADD COLUMN quote TEXT NOT NULL DEFAULT ''`
+    );
+  } catch {
+    // 列已存在
+  }
   // tree_id 列就绪后创建索引（旧库必须先有列）
   try {
     await db.execute(

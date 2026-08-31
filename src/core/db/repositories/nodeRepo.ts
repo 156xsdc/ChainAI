@@ -20,6 +20,8 @@ export interface CreateNodeInput {
   color?: string;
   /** 所属树（默认 null = 迁移兼容） */
   treeId?: string | null;
+  /** 引用的 AI 回答片段 */
+  quote?: string;
 }
 
 export interface EdgeWithParent extends TreeEdge {
@@ -43,8 +45,8 @@ export class NodeRepository {
     const id = newId();
     const ts = now();
     await this.db.execute(
-      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?)`,
+      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, quote, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?)`,
       [
         id,
         input.treeId ?? null,
@@ -53,6 +55,7 @@ export class NodeRepository {
         input.type ?? "normal",
         input.summary ?? "",
         input.color ?? "#333333",
+        input.quote ?? "",
         ts,
         ts,
       ]
@@ -83,6 +86,7 @@ export class NodeRepository {
       isKept?: boolean;
       isFavorited?: boolean;
       answerVersion?: number;
+      quote?: string;
     }
   ): Promise<TreeNode | null> {
     const sets: string[] = [];
@@ -119,6 +123,10 @@ export class NodeRepository {
     if (patch.answerVersion !== undefined) {
       sets.push("answer_version = ?");
       params.push(patch.answerVersion);
+    }
+    if (patch.quote !== undefined) {
+      sets.push("quote = ?");
+      params.push(patch.quote);
     }
 
     if (sets.length === 0) return this.getNode(id);

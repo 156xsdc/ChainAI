@@ -19,7 +19,6 @@ import { useClickOutside } from "../../hooks/useClickOutside";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig } from "../../core/ai/types";
 import { BranchDialog } from "../modals/BranchDialog";
-import { NewStartDialog } from "../modals/NewStartDialog";
 import { SettingsDialog } from "../modals/SettingsDialog";
 
 export function InputCard() {
@@ -40,7 +39,6 @@ export function InputCard() {
   const [children, setChildren] = useState<BranchOption[]>([]);
   const branchMenuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false), menuOpen);
   const [branchDialogFor, setBranchDialogFor] = useState<string | null>(null);
-  const [newStartOpen, setNewStartOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const aiMenuRef = useClickOutside<HTMLDivElement>(
@@ -188,13 +186,6 @@ export function InputCard() {
               disabled={!hasParent}
               onClick={() => navigateToParent()}
             />
-            <ToolButton
-              icon={<Sparkles size={13} />}
-              label="新建"
-              title="从新开始（不继承上下文）"
-              disabled={!currentNodeId}
-              onClick={() => setNewStartOpen(true)}
-            />
 
             <div className="flex-1" />
 
@@ -332,10 +323,6 @@ export function InputCard() {
         open={branchDialogFor !== null}
         parentNodeId={branchDialogFor ?? ""}
         onClose={() => setBranchDialogFor(null)}
-      />
-      <NewStartDialog
-        open={newStartOpen}
-        onClose={() => setNewStartOpen(false)}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

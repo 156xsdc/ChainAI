@@ -392,6 +392,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const estTokens = estimateMessagesTokens([
         ...estMsgsTruncated,
         { content: trimmed },
+        ...(quote ? [{ content: quote.text }] : []),
       ]);
       const contextLimit = await repos.settings.get<number>(
         "ai.contextLimit",
@@ -615,10 +616,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createBranch: async (parentNodeId, params) => {
-    const { treeService, currentTreeId } = get();
+    const { repos, treeService, currentTreeId } = get();
     if (!treeService) return "";
+    // count 模式未指定条数时用全局默认（分支提示线快速创建与对话框一致）
+    let inheritCount = params?.inheritCount;
+    if (
+      (params?.inheritMode === undefined || params?.inheritMode === "count") &&
+      (inheritCount === undefined || inheritCount === null)
+    ) {
+      inheritCount = await repos?.settings.get<number>("ai.defaultInheritCount", 5);
+    }
     const { node } = await treeService.createBranch(parentNodeId, {
       ...params,
+      inheritCount,
       treeId: currentTreeId,
     });
     await get().navigateTo(node.id);

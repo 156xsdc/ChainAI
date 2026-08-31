@@ -111,9 +111,10 @@ export function computeGitLayout(
 
   /**
    * 找空闲轨道：
-   * - 有 preferred（父轨道）：从父轨道两侧逐层向外扩展，贴近父链，减少连线跨度与交叉
+   * - 有 preferred（父轨道）：从父轨道两侧（左-右交替）逐层向外扩展，
+   *   让分叉子节点在父链两侧对称展开，避免全部单侧铺开导致长连线横跨
    * - 无 preferred（根）：从 0 开始找
-   * 均要求当前行 r 未被占用
+   * 均要求当前行 r 未被占用（允许负 lane，最后整体平移回非负）
    */
   const findLane = (preferred: number[], r: number): number => {
     if (preferred.length > 0) {
@@ -122,7 +123,6 @@ export function computeGitLayout(
         for (const p of preferred) {
           for (const cand of [p - radius, p + radius]) {
             if (
-              cand >= 0 &&
               !preferred.includes(cand) &&
               laneLastRow.get(cand) !== r
             ) {
@@ -174,6 +174,13 @@ export function computeGitLayout(
 
     laneOf.set(id, lane);
     laneLastRow.set(lane, r);
+  }
+
+  // 整体平移：分叉可能产生负 lane（左右对称展开），统一平移到非负
+  let minLane = 0;
+  for (const l of laneOf.values()) minLane = Math.min(minLane, l);
+  if (minLane < 0) {
+    for (const [id, l] of laneOf) laneOf.set(id, l - minLane);
   }
 
   // ---- 3. 生成位置 ----

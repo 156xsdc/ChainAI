@@ -161,8 +161,8 @@ describe("computeGitLayout", () => {
     const root = positions.get("root")!;
     // 无冲突时 root 居中于子节点
     expect(Math.abs(root.x - centerX)).toBeLessThan(1);
-    // 子节点平均分布（不同轨道）
-    const xs = kids.map((k) => k.x);
+    // 子节点平均分布（不同轨道；左右交替布局下顺序可能不单调，排序后检查等距）
+    const xs = kids.map((k) => k.x).sort((a, b) => a - b);
     expect(xs[1] - xs[0]).toBeCloseTo(xs[2] - xs[1], 5);
   });
 

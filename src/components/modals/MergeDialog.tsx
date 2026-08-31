@@ -1,6 +1,6 @@
 /**
- * 综合合并对话框：合并两个节点为新节点（新会话）
- * 从两条父链分别继承上下文（按继承数量压缩）
+ * 综合合并对话框：合并多个节点为新节点（新会话）
+ * 从各条父链分别继承上下文（按继承数量压缩）
  */
 import { useEffect, useState } from "react";
 import { GitMerge } from "lucide-react";
@@ -9,30 +9,43 @@ import { Modal } from "../common/Modal";
 
 interface MergeDialogProps {
   open: boolean;
-  sourceId: string;
-  targetId: string;
+  parentNodeIds: string[];
   onClose: () => void;
 }
 
-export function MergeDialog({ open, sourceId, targetId, onClose }: MergeDialogProps) {
+const MAX_SHOW = 3; // 对话框最多展示的父节点卡片数
+
+export function MergeDialog({
+  open,
+  parentNodeIds,
+  onClose,
+}: MergeDialogProps) {
   const repos = useChatStore((s) => s.repos);
   const createMerge = useChatStore((s) => s.createMerge);
-  const [sourceQ, setSourceQ] = useState("");
-  const [targetQ, setTargetQ] = useState("");
+  const [parents, setParents] = useState<Array<{ id: string; question: string }>>(
+    []
+  );
   const [name, setName] = useState("");
   const [inheritCount, setInheritCount] = useState(10);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!open || !repos) return;
-    repos.nodes.getNode(sourceId).then((n) => setSourceQ(n?.question || "（空节点）"));
-    repos.nodes.getNode(targetId).then((n) => setTargetQ(n?.question || "（空节点）"));
-  }, [open, sourceId, targetId, repos]);
+    if (!open || !repos || parentNodeIds.length < 2) return;
+    void (async () => {
+      const list = await Promise.all(
+        parentNodeIds.map(async (id) => {
+          const n = await repos.nodes.getNode(id);
+          return { id, question: n?.question || "（空节点）" };
+        })
+      );
+      setParents(list);
+    })();
+  }, [open, parentNodeIds, repos]);
 
   const handleConfirm = async () => {
     if (busy) return;
     setBusy(true);
-    await createMerge([sourceId, targetId], {
+    await createMerge(parentNodeIds, {
       name: name.trim() || undefined,
       inheritCount,
     });
@@ -46,25 +59,35 @@ export function MergeDialog({ open, sourceId, targetId, onClose }: MergeDialogPr
   return (
     <Modal open={open} title="综合合并（新会话）" onClose={onClose}>
       <div className="flex flex-col gap-4">
-        {/* 合并结构示意 */}
-        <div className="flex items-center justify-center gap-3 rounded-xl bg-neutral-50 px-3 py-3.5">
-          <div className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-center">
-            <div className="text-[10px] text-neutral-400">父链 A</div>
-            <div className="truncate text-xs text-neutral-700" title={sourceQ}>
-              {truncate(sourceQ)}
-            </div>
+        {/* 合并结构示意：父链 → 合并节点 */}
+        <div className="rounded-xl bg-neutral-50 px-3 py-3.5">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {parents.slice(0, MAX_SHOW).map((p, i) => (
+              <div
+                key={p.id}
+                className="min-w-0 max-w-[160px] flex-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-center"
+              >
+                <div className="text-[10px] text-neutral-400">父链 {i + 1}</div>
+                <div className="truncate text-xs text-neutral-700" title={p.question}>
+                  {truncate(p.question)}
+                </div>
+              </div>
+            ))}
+            {parents.length > MAX_SHOW && (
+              <span className="shrink-0 text-[11px] text-neutral-400">
+                +{parents.length - MAX_SHOW} 条
+              </span>
+            )}
           </div>
-          <GitMerge size={18} className="shrink-0 text-neutral-400" />
-          <div className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-center">
-            <div className="text-[10px] text-neutral-400">父链 B</div>
-            <div className="truncate text-xs text-neutral-700" title={targetQ}>
-              {truncate(targetQ)}
-            </div>
+          <div className="mt-2 flex items-center justify-center gap-1.5 text-[10px] text-neutral-400">
+            <GitMerge size={14} className="shrink-0" />
+            <span>↓ 合并为新节点（新会话）</span>
           </div>
         </div>
         <p className="text-[11px] leading-relaxed text-neutral-500">
-          合并将创建新节点（<b>新会话</b>），同时从两条父链继承上下文。
-          之后在该节点的对话基于两条分支的综合理解。
+          合并将创建新节点（<b>新会话</b>），同时从
+          <b>{parents.length || parentNodeIds.length}</b> 条父链继承上下文。
+          之后在该节点的对话基于各分支的综合理解。
         </p>
 
         <div className="flex gap-3">

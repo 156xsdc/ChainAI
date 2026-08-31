@@ -63,8 +63,9 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   const prevCurrent = useRef<string | null>(null);
   const positionsLoaded = useRef(false);
   const [mergeState, setMergeState] = useState<{
-    sourceId: string;
-    targetId: string;
+    parentNodeIds: string[];
+    /** 拖拽合并的拖拽源（取消时保存其位置）；多选合并为 null */
+    sourceId?: string | null;
   } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [groupMenu, setGroupMenu] = useState<{
@@ -219,7 +220,22 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       setUiError("不能合并有上下级关系的节点（会形成循环）");
       return;
     }
-    setMergeState({ sourceId, targetId });
+    setMergeState({ parentNodeIds: [sourceId, targetId], sourceId });
+  };
+
+  /** 框选合并：把选中的多个节点作为父链合并为新节点 */
+  const handleMergeSelected = async () => {
+    if (!repos || selectedIds.size < 2) return;
+    // 防循环：选中节点之间不得存在上下级关系
+    for (const id of selectedIds) {
+      const desc = await repos.nodes.getDescendantIds(id);
+      const conflict = [...selectedIds].find((o) => o !== id && desc.includes(o));
+      if (conflict) {
+        setUiError("选中的节点存在上下级关系，不能合并");
+        return;
+      }
+    }
+    setMergeState({ parentNodeIds: [...selectedIds] });
   };
 
   // ---- 分组操作 ----
@@ -485,6 +501,14 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
               📦 创建分组
             </button>
             <button
+              className="rounded-lg border border-neutral-300 px-2.5 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100"
+              onClick={() => void handleMergeSelected()}
+              disabled={selectedIds.size < 2}
+              title="合并选中节点（新会话，从各父链继承上下文）"
+            >
+              🔀 合并
+            </button>
+            <button
               className="rounded-lg px-2 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100"
               onClick={() => setSelectedIds(new Set())}
             >
@@ -555,19 +579,21 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         }}
       />
 
-      {/* 拖拽合并对话框 */}
+      {/* 合并对话框（拖拽合并 / 框选合并共用） */}
       {mergeState && (
         <MergeDialog
           open
-          sourceId={mergeState.sourceId}
-          targetId={mergeState.targetId}
+          parentNodeIds={mergeState.parentNodeIds}
           onClose={() => {
-            const src = rfRef.current?.getNode(mergeState.sourceId);
-            if (src) {
-              setManualPosition(src.id, {
-                x: src.position.x,
-                y: src.position.y,
-              });
+            // 拖拽合并取消时：保存拖拽源节点的落点位置
+            if (mergeState.sourceId) {
+              const src = rfRef.current?.getNode(mergeState.sourceId);
+              if (src) {
+                setManualPosition(src.id, {
+                  x: src.position.x,
+                  y: src.position.y,
+                });
+              }
             }
             setMergeState(null);
           }}

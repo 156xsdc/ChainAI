@@ -109,7 +109,7 @@ export const MessageItem = memo(function MessageItem({
         onContextMenu={(e) => onContextMenu(e, item.nodeId)}
       >
         <div
-          className="max-w-[82%] rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-800"
+          className="max-w-[82%] select-text rounded-2xl border border-neutral-200 bg-neutral-100 px-4 py-2.5 text-[13.5px] leading-relaxed text-neutral-800"
           style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
         >
           {item.content}

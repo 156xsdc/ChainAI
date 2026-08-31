@@ -26,6 +26,10 @@ body {
 }
 
 /* Markdown 渲染样式 */
+/* AI 回答内容可选中（供复制/引用），body 默认 user-select:none 需在此恢复 */
+.markdown {
+  user-select: text;
+}
 .markdown > *:first-child {
   margin-top: 0;
 }

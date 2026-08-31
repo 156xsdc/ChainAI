@@ -2,11 +2,12 @@
  * 单条消息：用户（浅灰气泡）/ AI（Markdown 全文）
  * AI 消息 hover 时底部弹出操作条：版本切换 / 重新生成 / 复制 / 收藏
  */
-import { memo, useEffect, useState, type CSSProperties } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Quote,
   RefreshCw,
   Star,
 } from "lucide-react";
@@ -29,11 +30,56 @@ export const MessageItem = memo(function MessageItem({
   const streaming = useChatStore((s) => s.streaming);
   const toggleFavorite = useChatStore((s) => s.toggleFavorite);
   const setNotice = useChatStore((s) => s.setNotice);
+  const setQuote = useChatStore((s) => s.setQuote);
   const regenerate = useChatStore((s) => s.regenerate);
   const switchAnswer = useChatStore((s) => s.switchAnswer);
 
   // 版本信息（当前版本号 + 总数），用于切换箭头
   const [verInfo, setVerInfo] = useState<{ current: number; total: number } | null>(null);
+  // 引用弹窗：选中 AI 回答文本后弹出
+  const msgRef = useRef<HTMLDivElement>(null);
+  const [quotePopup, setQuotePopup] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
+
+  // 点击其他位置关闭引用弹窗
+  useEffect(() => {
+    if (!quotePopup) return;
+    const close = () => setQuotePopup(null);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [quotePopup]);
+
+  /** AI 消息内选中文本 → 弹出引用按钮 */
+  const handleMouseUp = () => {
+    if (item.role !== "assistant" || isStreaming) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return;
+    const text = sel.toString().trim();
+    if (!text || text.length < 2) return;
+    const container = msgRef.current;
+    if (!container) return;
+    const range = sel.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) return;
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    setQuotePopup({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+      text,
+    });
+  };
+
+  /** 引用：把选中内容钉到输入框 */
+  const handleQuote = () => {
+    if (!quotePopup) return;
+    setQuote({ nodeId: item.nodeId, text: quotePopup.text });
+    window.getSelection()?.removeAllRanges();
+    setQuotePopup(null);
+    setNotice("📎 已引用，可在输入框继续提问");
+  };
 
   useEffect(() => {
     // 流式期间版本信息不参与渲染（箭头已隐藏），跳过查询避免每次增量都查库
@@ -83,8 +129,10 @@ export const MessageItem = memo(function MessageItem({
 
   return (
     <div
+      ref={msgRef}
       className="group/msg relative"
       onContextMenu={(e) => onContextMenu(e, item.nodeId)}
+      onMouseUp={handleMouseUp}
     >
       {isStreaming ? (
         // 流式期间用纯文本渲染（省 CPU），结束后统一渲染 Markdown
@@ -94,6 +142,29 @@ export const MessageItem = memo(function MessageItem({
         </div>
       ) : (
         <Markdown content={item.content} />
+      )}
+
+      {/* 选中文本后弹出的引用按钮 */}
+      {quotePopup && (
+        <div
+          className="fixed z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1.5 shadow-lg"
+          style={{
+            top: Math.max(8, quotePopup.y - 42),
+            left: Math.min(
+              Math.max(70, quotePopup.x),
+              window.innerWidth - 70
+            ),
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <Quote size={12} className="shrink-0 text-neutral-500" />
+          <button
+            className="whitespace-nowrap text-xs font-medium text-neutral-700 hover:text-neutral-900"
+            onClick={handleQuote}
+          >
+            引用
+          </button>
+        </div>
       )}
 
       {/* hover 底部操作条 */}

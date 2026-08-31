@@ -164,6 +164,10 @@ interface ChatState {
   exportMarkdown: () => Promise<void>;
   /** 导入 Markdown 文档为树（追加） */
   importMarkdown: () => Promise<void>;
+  /** 引用：用户选中的 AI 回答片段（nodeId + 文本），随消息发送 */
+  quote: { nodeId: string; text: string } | null;
+  setQuote: (quote: { nodeId: string; text: string } | null) => void;
+  clearQuote: () => void;
   /** 立即执行一次 JSON 自动备份（备份目录） */
   backupNow: (silent?: boolean) => Promise<void>;
   /** 检查并按设置执行自动备份（应用启动时调用） */
@@ -439,6 +443,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages.push({ role: "user", content: trimmed });
     }
 
+    // 引用：把选中内容及其出处问答注入上下文，替换原问题为带引用的提问
+    const quote = get().quote;
+    if (quote) {
+      // 移除末尾的用户消息（原问题），由引用提问替代
+      while (messages.length > 0 && messages[messages.length - 1].role === "user") {
+        messages.pop();
+      }
+      const quoteNode = await repos.nodes.getNode(quote.nodeId);
+      if (quoteNode?.question) {
+        messages.push({ role: "user", content: quoteNode.question });
+      }
+      if (quoteNode?.answer) {
+        messages.push({ role: "assistant", content: quoteNode.answer });
+      }
+      messages.push({
+        role: "user",
+        content: `【引用内容】\n${quote.text}\n\n请结合以上引用及其出处上下文，回答：${trimmed}`,
+      });
+      set({ quote: null }); // 引用已消费
+    }
+
     // 上下文耗尽提示：估算 token 用量
     const totalTokens = estimateMessagesTokens(messages);
     const contextLimit = await repos.settings.get<number>(
@@ -645,11 +670,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   noticeTone: "success",
   notifyTypes: { success: true, info: true },
   notifyDuration: 6,
+  quote: null,
   noteVersion: 0,
   favVersion: 0,
 
   bumpNoteVersion: () => set((s) => ({ noteVersion: s.noteVersion + 1 })),
   bumpFavVersion: () => set((s) => ({ favVersion: s.favVersion + 1 })),
+  setQuote: (quote) => set({ quote }),
+  clearQuote: () => set({ quote: null }),
   setNotice: (msg, tone = "success") => {
     const { notifyTypes } = get();
     if (tone === "success" && notifyTypes.success === false) return;

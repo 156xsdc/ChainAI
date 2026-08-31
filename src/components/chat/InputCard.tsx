@@ -6,10 +6,12 @@ import {
   ArrowUp,
   ChevronDown,
   Plus,
+  Quote,
   Send,
   Settings,
   Sparkles,
   Square,
+  X,
 } from "lucide-react";
 import { useChatStore, type BranchOption } from "../../store/chatStore";
 import { getBranchLabel } from "../../core/tree/branchLabel";
@@ -30,6 +32,8 @@ export function InputCard() {
   const stopStreaming = useChatStore((s) => s.stopStreaming);
   const navigateTo = useChatStore((s) => s.navigateTo);
   const navigateToParent = useChatStore((s) => s.navigateToParent);
+  const quote = useChatStore((s) => s.quote);
+  const clearQuote = useChatStore((s) => s.clearQuote);
 
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -261,6 +265,28 @@ export function InputCard() {
               <Settings size={14} />
             </button>
           </div>
+
+          {/* 引用卡片：选中 AI 内容后显示 */}
+          {quote && (
+            <div className="mx-3 mb-1 flex items-start gap-2 rounded-lg border border-neutral-200 border-l-2 border-l-neutral-400 bg-neutral-50 px-2.5 py-2">
+              <Quote size={11} className="mt-0.5 shrink-0 text-neutral-400" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[9px] text-neutral-400">
+                  已引用一段回答，将结合其出处上下文回答
+                </div>
+                <div className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-neutral-600">
+                  {quote.text}
+                </div>
+              </div>
+              <button
+                className="shrink-0 rounded p-0.5 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-500"
+                title="移除引用"
+                onClick={clearQuote}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {/* 输入区 */}
           <div className="flex items-end gap-2 px-3 pb-3">

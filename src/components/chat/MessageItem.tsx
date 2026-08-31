@@ -43,6 +43,17 @@ export const MessageItem = memo(function MessageItem({
     y: number;
     text: string;
   } | null>(null);
+  /** mousedown 时的选区快照：用于区分"新拖选"与"点击" */
+  const mousedownSelection = useRef("");
+
+  // 全局记录 mousedown 时的选区（任何位置）
+  useEffect(() => {
+    const record = () => {
+      mousedownSelection.current = window.getSelection()?.toString() ?? "";
+    };
+    document.addEventListener("mousedown", record);
+    return () => document.removeEventListener("mousedown", record);
+  }, []);
 
   // 点击其他位置关闭引用弹窗
   useEffect(() => {
@@ -52,13 +63,15 @@ export const MessageItem = memo(function MessageItem({
     return () => document.removeEventListener("mousedown", close);
   }, [quotePopup]);
 
-  /** AI 消息内选中文本 → 弹出引用按钮 */
+  /** AI 消息内选中文本 → 弹出引用按钮（仅"新拖选"触发，点击不弹） */
   const handleMouseUp = () => {
     if (item.role !== "assistant" || isStreaming) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) return;
     const text = sel.toString().trim();
     if (!text || text.length < 2) return;
+    // 选区与 mousedown 时相同 = 点击而非新拖选（避免"关不掉"）
+    if (text === mousedownSelection.current) return;
     const container = msgRef.current;
     if (!container) return;
     const range = sel.getRangeAt(0);

@@ -217,8 +217,8 @@ export function SettingsDialog({
                 <div className="truncate text-[13px] font-medium text-neutral-800">
                   {c.name}
                   {c.isDefault && (
-                    <span className="ml-1.5 text-[10px] font-normal text-neutral-400">
-                      默认
+                    <span className="ml-1.5 rounded bg-neutral-800 px-1 py-px text-[9px] font-normal text-white">
+                      当前使用
                     </span>
                   )}
                 </div>
@@ -228,24 +228,24 @@ export function SettingsDialog({
               </div>
               {!c.isDefault && (
                 <button
-                  className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-                  title="设为默认"
+                  className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-neutral-300 px-1.5 py-1 text-[11px] text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700"
+                  title="切换为当前使用的 AI 服务"
                   onClick={() =>
                     persist(configs.map((x) => ({ ...x, isDefault: x.id === c.id })))
                   }
                 >
-                  <Check size={13} />
+                  <Check size={11} /> 使用
                 </button>
               )}
               <button
-                className="rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-red-500"
+                className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-red-500"
                 title="删除"
                 onClick={() => persist(configs.filter((x) => x.id !== c.id))}
               >
                 <Trash2 size={13} />
               </button>
               <button
-                className="whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                className="shrink-0 whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                 onClick={() => {
                   setEditing({ ...c });
                   setTestResult(null);
@@ -479,8 +479,17 @@ export function SettingsDialog({
           </div>
         </div>
 
-        {/* 编辑表单 */}
-        {editing && (
+      </div>
+    </Modal>
+
+    {/* 编辑 AI 配置（独立弹窗） */}
+    <Modal
+      open={editing !== null}
+      title="编辑 AI 配置"
+      onClose={() => setEditing(null)}
+      width={560}
+    >
+      {editing && (
           <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
             <div className="grid grid-cols-2 gap-3">
               <Field label="提供商">
@@ -604,8 +613,7 @@ export function SettingsDialog({
             </div>
           </div>
         )}
-      </div>
-    </Modal>
+      </Modal>
 
     {/* 回收站 */}
     <RecycleBinDialog

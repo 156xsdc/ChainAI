@@ -14,6 +14,8 @@ import {
 import { useChatStore, type BranchOption } from "../../store/chatStore";
 import { getBranchLabel } from "../../core/tree/branchLabel";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { providerManager } from "../../core/ai/manager";
+import type { ProviderConfig } from "../../core/ai/types";
 import { BranchDialog } from "../modals/BranchDialog";
 import { NewStartDialog } from "../modals/NewStartDialog";
 import { SettingsDialog } from "../modals/SettingsDialog";
@@ -36,7 +38,30 @@ export function InputCard() {
   const [branchDialogFor, setBranchDialogFor] = useState<string | null>(null);
   const [newStartOpen, setNewStartOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aiMenuOpen, setAiMenuOpen] = useState(false);
+  const aiMenuRef = useClickOutside<HTMLDivElement>(
+    () => setAiMenuOpen(false),
+    aiMenuOpen
+  );
+  const [aiConfigs, setAiConfigs] = useState<ProviderConfig[]>(
+    providerManager.getConfigs()
+  );
+  const activeAi = providerManager.getActiveConfig();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /** 快捷切换 AI 服务（切换默认配置并持久化） */
+  const switchAi = async (configId: string) => {
+    providerManager.setDefault(configId);
+    const list = providerManager.getConfigs();
+    setAiConfigs([...list]);
+    const repos = useChatStore.getState().repos;
+    await repos?.settings.set("ai.providers", list);
+    const target = list.find((c) => c.id === configId);
+    useChatStore.getState().setNotice(
+      `🤖 已切换到「${target?.name ?? "AI"}」`
+    );
+    setAiMenuOpen(false);
+  };
 
   // 加载当前节点的子分支（下拉切换用）
   useEffect(() => {
@@ -159,6 +184,65 @@ export function InputCard() {
             />
 
             <div className="flex-1" />
+
+            {/* AI 快捷切换 */}
+            <div className="relative">
+              <button
+                className="flex max-w-[140px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
+                onClick={() => setAiMenuOpen((v) => !v)}
+                title="切换 AI 服务"
+              >
+                <Sparkles size={12} className="shrink-0 text-neutral-400" />
+                <span className="truncate">{activeAi?.name ?? "未配置 AI"}</span>
+                <ChevronDown size={12} className="shrink-0 text-neutral-400" />
+              </button>
+              {aiMenuOpen && (
+                <div
+                  ref={aiMenuRef}
+                  className="absolute bottom-full right-0 z-40 mb-1 w-52 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
+                >
+                  <div className="px-3 py-1 text-[10px] text-neutral-400">
+                    AI 服务（点击切换）
+                  </div>
+                  {aiConfigs.length === 0 && (
+                    <div className="px-3 py-1.5 text-xs text-neutral-300">
+                      暂无配置，去设置中添加
+                    </div>
+                  )}
+                  {aiConfigs.map((c) => (
+                    <button
+                      key={c.id}
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
+                      onClick={() => void switchAi(c.id)}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{
+                          background: c.isDefault ? "#1a1a1a" : "#d4d4d4",
+                        }}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                      {c.isDefault && (
+                        <span className="shrink-0 text-[9px] text-neutral-400">
+                          使用中
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                  <div className="my-1 h-px bg-neutral-100" />
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-500 hover:bg-neutral-100"
+                    onClick={() => {
+                      setAiMenuOpen(false);
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    <Settings size={12} />
+                    管理配置…
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"

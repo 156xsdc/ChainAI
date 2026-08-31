@@ -58,7 +58,7 @@ export function SettingsDialog({
   const [cleanupDays, setCleanupDays] = useState(30);
   const [backupEnabled, setBackupEnabled] = useState(true);
   const [backupInterval, setBackupInterval] = useState(3);
-  const [defaultInherit, setDefaultInherit] = useState(10);
+  const [defaultInherit, setDefaultInherit] = useState(5);
   const [contextLimit, setContextLimit] = useState(8000);
   const [notifyDuration, setNotifyDuration] = useState(6);
   const [notifySuccess, setNotifySuccess] = useState(true);
@@ -95,7 +95,7 @@ export function SettingsDialog({
         });
       void useChatStore
         .getState()
-        .repos?.settings.get<number>("ai.defaultInheritCount", 10)
+        .repos?.settings.get<number>("ai.defaultInheritCount", 5)
         .then((v) => setDefaultInherit(v));
       void useChatStore
         .getState()

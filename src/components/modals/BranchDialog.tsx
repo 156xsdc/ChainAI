@@ -31,7 +31,7 @@ export function BranchDialog({ open, parentNodeId, onClose }: BranchDialogProps)
     if (!open) return;
     void useChatStore
       .getState()
-      .repos?.settings.get<number>("ai.defaultInheritCount", 10)
+      .repos?.settings.get<number>("ai.defaultInheritCount", 5)
       .then((v) => setCount(v));
   }, [open]);
 

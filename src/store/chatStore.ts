@@ -456,7 +456,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 分支节点用会话继承数；普通对话用全局默认（ai.defaultInheritCount）
     let inheritCount = session?.inheritCount;
     if (inheritCount === undefined || inheritCount === null) {
-      inheritCount = await repos.settings.get<number>("ai.defaultInheritCount", 10);
+      inheritCount = await repos.settings.get<number>("ai.defaultInheritCount", 5);
     }
     const inheritMode =
       inheritCount < 0 ? "all" : inheritCount === 0 ? "none" : "count";

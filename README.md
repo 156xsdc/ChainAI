@@ -104,7 +104,7 @@ src/
 ## 📄 更多
 
 - 版本历史见 [CHANGELOG.md](./CHANGELOG.md)
-- 素材出处见 [CREDITS.md](./CREDITS.md)（应用图标：juicy_fish）
+- 素材出处见 [CREDITS.md](./CREDITS.md)（应用图标：项目原创）
 
 ## 🤖 协作说明
 

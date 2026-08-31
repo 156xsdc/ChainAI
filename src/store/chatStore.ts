@@ -410,6 +410,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
+    // 发送已受理：立即清除输入框引用（节点已持久化 quote，消息流会显示）
+    set({ quote: null });
+
     await repos.settings.set(`chat.currentNodeId.${treeId}`, nodeId);
 
     // 立即刷新：用户消息显示到聊天区
@@ -469,7 +472,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         role: "user",
         content: `【引用内容】\n${quote.text}\n\n请结合以上引用及其出处上下文，回答：${trimmed}`,
       });
-      set({ quote: null }); // 引用已消费
     }
 
     // 上下文耗尽提示：估算 token 用量

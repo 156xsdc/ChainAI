@@ -9,6 +9,22 @@ describe("收藏/分组/便签/设置仓库", () => {
     repo = await createTestDb();
   });
 
+  it("节点：quote 引用字段持久化（创建/更新/读取）", async () => {
+    const node = await repo.nodes.createNode({
+      question: "追问",
+      quote: "被引用的回答片段……",
+    });
+    expect((await repo.nodes.getNode(node.id))?.quote).toBe("被引用的回答片段……");
+
+    // 更新 quote（空节点填入场景）
+    await repo.nodes.updateNode(node.id, { quote: "新的引用" });
+    expect((await repo.nodes.getNode(node.id))?.quote).toBe("新的引用");
+
+    // 无 quote 默认空串
+    const plain = await repo.nodes.createNode({ question: "普通问题" });
+    expect((await repo.nodes.getNode(plain.id))?.quote).toBe("");
+  });
+
   it("收藏：添加、分组、移动、删除", async () => {
     const node = await repo.nodes.createNode({ question: "重要内容" });
     const group = await repo.favorites.createGroup("核心", "#ff0000", "⭐");

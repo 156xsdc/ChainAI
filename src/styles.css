@@ -25,6 +25,12 @@ body {
   user-select: none;
 }
 
+/* 文本选中样式：契合黑白灰极简风（默认蓝色选中 → 浅灰底深灰字） */
+::selection {
+  background: #d4d4d4;
+  color: #1a1a1a;
+}
+
 /* Markdown 渲染样式 */
 /* AI 回答内容可选中（供复制/引用），body 默认 user-select:none 需在此恢复 */
 .markdown {

@@ -190,7 +190,7 @@ export function SettingsDialog({
           <div className="flex items-center justify-between">
             <span className="text-xs text-neutral-500">已保存的配置</span>
             <button
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
+              className="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
               onClick={() => {
                 setEditing(blankConfig("openai"));
                 setTestResult(null);
@@ -245,7 +245,7 @@ export function SettingsDialog({
                 <Trash2 size={13} />
               </button>
               <button
-                className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                className="whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                 onClick={() => {
                   setEditing({ ...c });
                   setTestResult(null);
@@ -281,11 +281,13 @@ export function SettingsDialog({
                 <option value={10}>10 秒</option>
               </select>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-neutral-600">成功通知（收藏/分组/备份等）</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-xs text-neutral-600">
+                成功通知（收藏/分组/备份等）
+              </span>
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-neutral-800"
+                className="h-4 w-4 shrink-0 accent-neutral-800"
                 checked={notifySuccess}
                 onChange={(e) => {
                   setNotifySuccess(e.target.checked);
@@ -296,11 +298,13 @@ export function SettingsDialog({
                 }}
               />
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-neutral-600">提示通知（清理/上下文耗尽等）</span>
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-xs text-neutral-600">
+                提示通知（清理/上下文耗尽等）
+              </span>
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-neutral-800"
+                className="h-4 w-4 shrink-0 accent-neutral-800"
                 checked={notifyInfo}
                 onChange={(e) => {
                   setNotifyInfo(e.target.checked);
@@ -311,7 +315,7 @@ export function SettingsDialog({
                 }}
               />
             </div>
-            <div className="text-[10px] text-neutral-400">
+            <div className="truncate text-[10px] text-neutral-400">
               错误通知始终显示，不在此控制
             </div>
           </div>
@@ -336,9 +340,11 @@ export function SettingsDialog({
                 <FolderOpen size={12} /> 选择
               </button>
             </div>
-            <div className="text-[10px] leading-relaxed text-neutral-400">
-              便签以独立 Markdown 文件存储于此目录；在便签板中设置"分类"可创建子目录。
-              修改路径后，新便签写入新位置（已有便签文件不自动迁移）。
+            <div
+              className="truncate text-[10px] text-neutral-400"
+              title={`便签以独立 Markdown 文件存储于此目录；在便签板中设置"分类"可创建子目录。修改路径后，新便签写入新位置（已有便签文件不自动迁移）。`}
+            >
+              便签以独立 Markdown 文件存储于此目录，分类可创建子目录；修改路径后新便签写入新位置
             </div>
           </div>
         </div>
@@ -366,8 +372,11 @@ export function SettingsDialog({
                 }}
               />
             </div>
-            <div className="text-[10px] text-neutral-400">
-              分支创建对话框中的默认值；发送时上下文超过限制会提示分叉（设置 ai.contextLimit 可调上限）
+            <div
+              className="truncate text-[10px] text-neutral-400"
+              title="分支创建对话框中的默认值；发送时上下文超过限制会提示分叉（设置 ai.contextLimit 可调上限）"
+            >
+              分支创建对话框默认值；上下文超限会提示分叉（ai.contextLimit 可调）
             </div>
           </div>
         </div>
@@ -377,14 +386,14 @@ export function SettingsDialog({
           <div className="mb-2 text-xs text-neutral-500">存储管理</div>
           <div className="flex flex-col gap-2.5">
             {/* 自动备份 */}
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs text-neutral-700">自动备份</div>
-                <div className="text-[10px] text-neutral-400">
-                  启动时检查，超过间隔自动备份到 文档/AITreeBackups/
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs text-neutral-700">自动备份</div>
+                <div className="truncate text-[10px] text-neutral-400">
+                  启动时检查，超过间隔自动备份
                 </div>
               </div>
-              <label className="flex cursor-pointer items-center gap-2">
+              <label className="flex shrink-0 cursor-pointer items-center gap-2">
                 <select
                   className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
                   value={backupInterval}
@@ -411,14 +420,14 @@ export function SettingsDialog({
             </div>
 
             {/* 自动清理 */}
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs text-neutral-700">自动清理不活跃分支</div>
-                <div className="text-[10px] text-neutral-400">
-                  保护：收藏 / 保留 / 分组 / 便签关联的节点不会被清理
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs text-neutral-700">自动清理不活跃分支</div>
+                <div className="truncate text-[10px] text-neutral-400">
+                  保护：收藏 / 保留 / 分组 / 便签关联
                 </div>
               </div>
-              <label className="flex cursor-pointer items-center gap-2">
+              <label className="flex shrink-0 cursor-pointer items-center gap-2">
                 <select
                   className="rounded-lg border border-neutral-200 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
                   value={cleanupDays}
@@ -444,66 +453,29 @@ export function SettingsDialog({
               </label>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-                onClick={() => void cleanupNow()}
-              >
-                <RefreshCw size={12} /> 立即清理
-              </button>
-              <button
-                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-                onClick={() => void backupNow()}
-              >
-                <Download size={12} /> 立即备份
-              </button>
-              <button
-                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-                onClick={() => setRecycleBinOpen(true)}
-              >
-                <Trash size={12} /> 回收站
-              </button>
+            <div className="grid grid-cols-3 gap-2">
+              <DataButton icon={<RefreshCw size={12} />} label="立即清理" onClick={() => void cleanupNow()} />
+              <DataButton icon={<Download size={12} />} label="立即备份" onClick={() => void backupNow()} />
+              <DataButton icon={<Trash size={12} />} label="回收站" onClick={() => setRecycleBinOpen(true)} />
             </div>
           </div>
         </div>
 
         {/* 数据管理 */}
         <div className="rounded-xl border border-neutral-200 p-3.5">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs text-neutral-500">数据管理</span>
-            <span className="text-[10px] text-neutral-300">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="whitespace-nowrap text-xs text-neutral-500">
+              数据管理
+            </span>
+            <span className="truncate whitespace-nowrap text-right text-[10px] text-neutral-300">
               完整备份 / 覆盖恢复（Ctrl+E 导出 · Ctrl+I 导入）
             </span>
           </div>
-          <div className="flex gap-2">
-            <button
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-              onClick={() => void exportData()}
-            >
-              <Download size={12} />
-              导出 JSON 备份
-            </button>
-            <button
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-              onClick={() => void importData()}
-            >
-              <Upload size={12} />
-              导入 JSON 备份
-            </button>
-            <button
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-              onClick={() => void exportMarkdown()}
-            >
-              <Download size={12} />
-              导出 Markdown
-            </button>
-            <button
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-100"
-              onClick={() => void importMarkdown()}
-            >
-              <Upload size={12} />
-              导入 Markdown
-            </button>
+          <div className="grid grid-cols-2 gap-2">
+            <DataButton icon={<Download size={12} />} label="导出 JSON 备份" onClick={() => void exportData()} />
+            <DataButton icon={<Upload size={12} />} label="导入 JSON 备份" onClick={() => void importData()} />
+            <DataButton icon={<Download size={12} />} label="导出 Markdown" onClick={() => void exportMarkdown()} />
+            <DataButton icon={<Upload size={12} />} label="导入 Markdown" onClick={() => void importMarkdown()} />
           </div>
         </div>
 
@@ -655,8 +627,29 @@ function Field({
 }) {
   return (
     <div className={wide ? "col-span-2" : ""}>
-      <label className="mb-1 block text-[11px] text-neutral-400">{label}</label>
+      <label className="mb-1 block truncate text-[11px] text-neutral-400">{label}</label>
       {children}
     </div>
+  );
+}
+
+/** 数据/操作按钮：统一高度、单行文本、极简黑白灰 */
+function DataButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 text-xs text-neutral-600 transition-colors hover:bg-neutral-100"
+      onClick={onClick}
+    >
+      <span className="text-neutral-400">{icon}</span>
+      {label}
+    </button>
   );
 }

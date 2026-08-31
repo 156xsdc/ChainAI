@@ -20,6 +20,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import { toPng } from "html-to-image";
+import { Boxes, GitMerge, X } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
@@ -494,29 +495,30 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
 
         {/* 框选后的浮动操作条 */}
         {selectedIds.size > 0 && (
-          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-1.5 shadow-md">
-            <span className="text-xs text-neutral-500">
+          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center whitespace-nowrap rounded-xl border border-neutral-200 bg-white py-1 pl-3.5 pr-1.5 shadow-md">
+            <span className="text-[11px] text-neutral-500">
               已选 {selectedIds.size} 个节点
             </span>
-            <button
-              className="rounded-lg bg-neutral-800 px-2.5 py-1 text-[11px] text-white hover:bg-neutral-700"
+            <span className="mx-2 h-3.5 w-px shrink-0 bg-neutral-200" />
+            <SelectionButton
+              icon={<Boxes size={12} />}
+              label="创建分组"
+              primary
               onClick={() => void handleCreateGroup()}
-            >
-              📦 创建分组
-            </button>
-            <button
-              className="rounded-lg border border-neutral-300 px-2.5 py-1 text-[11px] text-neutral-600 hover:bg-neutral-100"
+            />
+            <SelectionButton
+              icon={<GitMerge size={12} />}
+              label="合并"
               onClick={() => void handleMergeSelected()}
               disabled={selectedIds.size < 2}
               title="合并选中节点（新会话，从各父链继承上下文）"
-            >
-              🔀 合并
-            </button>
+            />
             <button
-              className="rounded-lg px-2 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100"
+              className="ml-0.5 rounded-lg p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600"
+              title="取消选择"
               onClick={() => setSelectedIds(new Set())}
             >
-              取消
+              <X size={13} />
             </button>
           </div>
         )}
@@ -629,3 +631,36 @@ function GroupMenuItem({
 }
 
 type FlowNode = TreeNodeFlowNode | GroupFlowNode;
+
+/** 框选工具条按钮（统一高度/单行/极简风格） */
+function SelectionButton({
+  icon,
+  label,
+  primary,
+  disabled,
+  title,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  primary?: boolean;
+  disabled?: boolean;
+  title?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-[11px] transition-colors disabled:cursor-not-allowed ${
+        primary
+          ? "bg-neutral-800 text-white hover:bg-neutral-700 disabled:bg-neutral-200 disabled:text-neutral-400"
+          : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100 disabled:border-transparent disabled:text-neutral-300"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}

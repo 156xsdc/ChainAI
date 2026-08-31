@@ -377,9 +377,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // 上下文超限预检：超出时自动创建分支（继承最近 N 条）继续，避免发出去被模型拒绝
     if (!skipAutoBranch && currentNodeId) {
+      // 按实际继承策略估算（截断到最近 N 条，而非全量路径——避免历史长时误判）
       const ctxEst = await treeService.getContextPath(currentNodeId);
+      const estSession = await repos.sessions.getByStartNode(currentNodeId);
+      let estCount = estSession?.inheritCount;
+      if (estCount === undefined || estCount === null) {
+        estCount = await repos.settings.get<number>("ai.defaultInheritCount", 5);
+      }
+      const estMsgs = ctxEst.map((m) => ({ content: m.content }));
+      const estMsgsTruncated =
+        estCount === undefined || estCount < 0 || estCount === null
+          ? estMsgs
+          : estMsgs.slice(-Math.max(1, estCount));
       const estTokens = estimateMessagesTokens([
-        ...ctxEst.map((m) => ({ content: m.content })),
+        ...estMsgsTruncated,
         { content: trimmed },
       ]);
       const contextLimit = await repos.settings.get<number>(

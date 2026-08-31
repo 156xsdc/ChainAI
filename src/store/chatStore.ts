@@ -104,7 +104,7 @@ interface ChatState {
   navigateTo: (nodeId: string) => Promise<void>;
   navigateToParent: () => Promise<void>;
   /** @returns 是否已受理（false = 未创建节点，如未配置AI/创建失败） */
-  sendMessage: (text: string) => Promise<boolean>;
+  sendMessage: (text: string, skipAutoBranch?: boolean) => Promise<boolean>;
   createBranch: (parentNodeId: string, params?: CreateBranchParams) => Promise<string>;
   createNewStart: (parentNodeId: string, name?: string) => Promise<string>;
   createMerge: (
@@ -355,7 +355,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (text) => {
+  sendMessage: async (text, skipAutoBranch) => {
     const { repos, treeService, currentNodeId, currentTreeId, streaming } =
       get();
     const trimmed = text.trim();
@@ -373,6 +373,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!config) {
       set({ uiError: "尚未配置 AI 服务，请点击输入卡片左侧的 ⚙ 进行设置" });
       return false;
+    }
+
+    // 上下文超限预检：超出时自动创建分支（继承最近 N 条）继续，避免发出去被模型拒绝
+    if (!skipAutoBranch && currentNodeId) {
+      const ctxEst = await treeService.getContextPath(currentNodeId);
+      const estTokens = estimateMessagesTokens([
+        ...ctxEst.map((m) => ({ content: m.content })),
+        { content: trimmed },
+      ]);
+      const contextLimit = await repos.settings.get<number>(
+        "ai.contextLimit",
+        8000
+      );
+      if (estTokens > contextLimit) {
+        const inheritN = await repos.settings.get<number>(
+          "ai.defaultInheritCount",
+          10
+        );
+        const ok = await confirmDialog({
+          title: "上下文超出限制",
+          message: `当前上下文约 ${Math.round(estTokens / 1000)}k tokens，已超过模型上限（${contextLimit} tokens）。\n将创建新分支（继承最近 ${inheritN} 条消息）继续对话。`,
+          confirmText: "创建分支继续",
+        });
+        if (!ok) return false;
+        const { node } = await treeService.createBranch(currentNodeId, {
+          inheritMode: "count",
+          inheritCount: inheritN,
+        });
+        await get().navigateTo(node.id);
+        // 在新分支上重发（跳过自动分支，防止递归循环）
+        return get().sendMessage(trimmed, true);
+      }
     }
 
     let nodeId = currentNodeId;

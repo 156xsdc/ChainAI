@@ -59,6 +59,7 @@ export function SettingsDialog({
   const [backupEnabled, setBackupEnabled] = useState(true);
   const [backupInterval, setBackupInterval] = useState(3);
   const [defaultInherit, setDefaultInherit] = useState(10);
+  const [contextLimit, setContextLimit] = useState(8000);
   const [notifyDuration, setNotifyDuration] = useState(6);
   const [notifySuccess, setNotifySuccess] = useState(true);
   const [notifyInfo, setNotifyInfo] = useState(true);
@@ -96,6 +97,10 @@ export function SettingsDialog({
         .getState()
         .repos?.settings.get<number>("ai.defaultInheritCount", 10)
         .then((v) => setDefaultInherit(v));
+      void useChatStore
+        .getState()
+        .repos?.settings.get<number>("ai.contextLimit", 8000)
+        .then((v) => setContextLimit(v));
       // 加载通知设置
       void useChatStore
         .getState()
@@ -353,15 +358,15 @@ export function SettingsDialog({
         <div className="rounded-xl border border-neutral-200 p-3.5">
           <div className="mb-2 text-xs text-neutral-500">上下文设置</div>
           <div className="flex flex-col gap-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-neutral-600">
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-xs text-neutral-600">
                 分支默认继承消息数
               </span>
               <input
                 type="number"
                 min={1}
                 max={100}
-                className="w-20 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-xs outline-none focus:border-neutral-400"
+                className="w-20 shrink-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-xs outline-none focus:border-neutral-400"
                 value={defaultInherit}
                 onChange={(e) => {
                   const v = Number(e.target.value);
@@ -372,11 +377,30 @@ export function SettingsDialog({
                 }}
               />
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-xs text-neutral-600">
+                上下文上限（tokens）
+              </span>
+              <input
+                type="number"
+                min={1000}
+                step={500}
+                className="w-20 shrink-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-xs outline-none focus:border-neutral-400"
+                value={contextLimit}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setContextLimit(v);
+                  void useChatStore
+                    .getState()
+                    .repos?.settings.set("ai.contextLimit", v);
+                }}
+              />
+            </div>
             <div
               className="truncate text-[10px] text-neutral-400"
-              title="分支创建对话框中的默认值；发送时上下文超过限制会提示分叉（设置 ai.contextLimit 可调上限）"
+              title="模型能接受的最大上下文（如 Ollama 默认 4096）。超过时发送前自动创建新分支（继承最近N条）继续，避免请求被模型拒绝"
             >
-              分支创建对话框默认值；上下文超限会提示分叉（ai.contextLimit 可调）
+              超过时自动创建新分支继续；建议填模型实际窗口（如 Ollama 4096）
             </div>
           </div>
         </div>

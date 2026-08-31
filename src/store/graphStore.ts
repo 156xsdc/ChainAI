@@ -12,6 +12,12 @@ interface GraphStore {
   /** 分组/结构变化版本号（触发树状图数据刷新） */
   graphVersion: number;
   setManualPosition: (nodeId: string, pos: { x: number; y: number }) => void;
+  /** 批量更新手动位置（仅内存，不写库——分组拖拽中高频调用） */
+  setManualPositionsLocal: (
+    positions: Record<string, { x: number; y: number }>
+  ) => void;
+  /** 持久化当前手动位置（分组拖拽结束调用一次） */
+  persistManualPositions: () => void;
   loadPositions: (positions: Record<string, { x: number; y: number }>) => void;
   resetLayout: () => void;
   bumpGraphVersion: () => void;
@@ -31,6 +37,19 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     if (repos) {
       repos.settings
         .set("graph.manualPositions", next)
+        .catch(() => {});
+    }
+  },
+
+  setManualPositionsLocal: (positions) => {
+    set({ manualPositions: { ...get().manualPositions, ...positions } });
+  },
+
+  persistManualPositions: () => {
+    const repos = useChatStore.getState().repos;
+    if (repos) {
+      repos.settings
+        .set("graph.manualPositions", get().manualPositions)
         .catch(() => {});
     }
   },

@@ -54,6 +54,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   const setNotice = useChatStore((s) => s.setNotice);
   const manualPositions = useGraphStore((s) => s.manualPositions);
   const setManualPosition = useGraphStore((s) => s.setManualPosition);
+  const setManualPositionsLocal = useGraphStore((s) => s.setManualPositionsLocal);
+  const persistManualPositions = useGraphStore((s) => s.persistManualPositions);
   const loadPositions = useGraphStore((s) => s.loadPositions);
   const bumpGraphVersion = useGraphStore((s) => s.bumpGraphVersion);
   const rfRef = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
@@ -111,8 +113,41 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     return manual ?? { x: algo?.x ?? 0, y: algo?.y ?? 0 };
   };
 
+  // ---- 分组整组拖拽（拖虚线框 → 组内所有节点一起移动）----
+  const groupDragStart = useRef<{
+    startPos: { x: number; y: number };
+    members: Array<{ id: string; x: number; y: number }>;
+  } | null>(null);
+
+  const handleNodeDragStart: OnNodeDrag<FlowNode> = (_, node) => {
+    if (node.type !== "group") return;
+    const g = data?.groups.find((x) => `group-${x.group.id}` === node.id);
+    if (!g) return;
+    groupDragStart.current = {
+      startPos: { x: node.position.x ?? 0, y: node.position.y ?? 0 },
+      members: g.memberIds.map((id) => ({ id, ...nodePos(id) })),
+    };
+  };
+
+  const handleNodeDrag: OnNodeDrag<FlowNode> = (_, node) => {
+    if (node.type !== "group" || !groupDragStart.current) return;
+    const s = groupDragStart.current;
+    const dx = (node.position.x ?? 0) - s.startPos.x;
+    const dy = (node.position.y ?? 0) - s.startPos.y;
+    const updates: Record<string, { x: number; y: number }> = {};
+    for (const m of s.members) updates[m.id] = { x: m.x + dx, y: m.y + dy };
+    // 内存更新（高频，不写库），成员节点实时跟随
+    setManualPositionsLocal(updates);
+  };
+
   // ---- 拖拽合并 ----
   const handleNodeDragStop: OnNodeDrag<FlowNode> = (_, node) => {
+    if (node.type === "group") {
+      // 整组拖动结束：持久化一次
+      if (groupDragStart.current) persistManualPositions();
+      groupDragStart.current = null;
+      return;
+    }
     const inst = rfRef.current;
     if (!inst) return;
     const intersecting = inst.getIntersectingNodes(node);
@@ -285,7 +320,7 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
           position: { x: minX, y: minY },
           width: maxX - minX,
           height: maxY - minY,
-          draggable: false,
+          draggable: true, // 可拖动：整组节点一起移动
           selectable: false,
           zIndex: -1,
           data: {
@@ -360,6 +395,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
             e.preventDefault();
             setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id });
           }}
+          onNodeDragStart={handleNodeDragStart}
+          onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onPaneClick={() => {
             setNodeMenu(null);

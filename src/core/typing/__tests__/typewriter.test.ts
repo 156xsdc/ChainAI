@@ -18,16 +18,27 @@ describe("Typewriter", () => {
     vi.useRealTimers();
   });
 
-  it("finish 后补齐全部内容", () => {
+  it("finish 后加速吐完剩余内容（不瞬间闪现全文）", async () => {
+    vi.useFakeTimers();
     const onDisplay = vi.fn();
     const tw = new Typewriter(onDisplay, {
-      threshold: 100,
-      charsPerSecond: 1000,
+      threshold: 0,
+      charsPerSecond: 100, // 匀速 100字/秒，10ms tick → 每tick 1字
+      tickMs: 10,
+      finishSpeed: 10, // 结束追赶 10倍速 → 每tick 10字
     });
-    tw.feed("你好世界");
-    expect(onDisplay).not.toHaveBeenCalled();
-    tw.finish();
-    expect(onDisplay).toHaveBeenLastCalledWith("你好世界");
+    tw.feed("一二三四五六七八九十"); // 10字
+    vi.advanceTimersByTime(10);
+    expect(onDisplay).toHaveBeenLastCalledWith("一"); // 匀速阶段只显示1字
+
+    const done = tw.finish();
+    // finish 后不是瞬间补齐（尚未推进 timer）
+    expect(onDisplay).not.toHaveBeenLastCalledWith("一二三四五六七八九十");
+    // 加速追赶：剩余9字，每tick 10字 → 1-2 tick 吐完
+    await vi.advanceTimersByTimeAsync(30);
+    await done;
+    expect(onDisplay).toHaveBeenLastCalledWith("一二三四五六七八九十");
+    vi.useRealTimers();
   });
 
   it("匀速显示：每次 tick 输出速度对应的字数", () => {

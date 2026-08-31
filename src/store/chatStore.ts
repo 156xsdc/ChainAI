@@ -538,7 +538,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } finally {
       streamController = null;
       set({ preparing: false });
-      if (typewriter) typewriter.finish();
+      if (typewriter) {
+        // 加速吐完剩余内容（避免输出完成后瞬间闪现全文）
+        await typewriter.finish();
+      }
       const finalAnswer = typewriter ? typewriter.fullText : answer;
       if (finalAnswer) {
         // 首次生成：写入版本1（重新生成/版本切换的基础）

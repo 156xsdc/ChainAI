@@ -893,6 +893,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (messages.length === 0) {
       messages.push({ role: "user", content: node.question });
     }
+    // 引用：重新生成时保持引用上下文（引用文本已持久化在节点 quote 列）
+    if (node.quote) {
+      while (
+        messages.length > 0 &&
+        messages[messages.length - 1].role === "user"
+      ) {
+        messages.pop();
+      }
+      messages.push({
+        role: "user",
+        content: `【引用内容】\n${node.quote}\n\n请结合以上引用及其出处上下文，回答：${node.question}`,
+      });
+    }
 
     // 流式生成（节流更新）
     const controller = new AbortController();

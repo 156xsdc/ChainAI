@@ -7,6 +7,7 @@ import { useChatStore } from "../../store/chatStore";
 import { promptDialog } from "../../store/dialogStore";
 import { MessageItem } from "./MessageItem";
 import { BranchDivider } from "./BranchDivider";
+import { MergeDivider } from "./MergeDivider";
 import { ContextMenu } from "./ContextMenu";
 import { Modal } from "../common/Modal";
 
@@ -121,6 +122,15 @@ export function MessageList() {
                   }}
                 />
               </div>
+            );
+          }
+          if (item.kind === "merge") {
+            return (
+              <MergeDivider
+                key={`merge-${item.nodeId}-${i}`}
+                options={item.options}
+                onSelect={(nodeId) => navigateTo(nodeId)}
+              />
             );
           }
           return (

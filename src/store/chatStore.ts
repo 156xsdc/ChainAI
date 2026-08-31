@@ -54,7 +54,14 @@ export type ChatStreamItem =
       /** 是否已保留标记 */
       isKept?: boolean;
     }
-  | { kind: "branch"; parentNodeId: string; children: BranchOption[] };
+  | { kind: "branch"; parentNodeId: string; children: BranchOption[] }
+  | {
+      kind: "merge";
+      /** 合并节点 id */
+      nodeId: string;
+      /** 父链选项（点击跳回合并前的任意分支） */
+      options: BranchOption[];
+    };
 
 export interface BranchOption {
   nodeId: string;
@@ -256,6 +263,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     for (const seg of segments) {
       const node = seg.node;
+      // 合并点提示线：该节点有多个父节点（合并节点），可跳回任意父链
+      const parents = await repos.nodes.getParentsWithEdge(node.id);
+      if (parents.length > 1) {
+        const options: BranchOption[] = [];
+        for (const p of parents) {
+          options.push({
+            nodeId: p.parent.id,
+            label: await getBranchLabel(repos, p.parent),
+            color: p.parent.color,
+            relationType: p.relationType,
+            isCurrent: false,
+          });
+        }
+        items.push({ kind: "merge", nodeId: node.id, options });
+      }
       if (node.question) {
         items.push({
           kind: "message",

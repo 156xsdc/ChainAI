@@ -1,18 +1,10 @@
 /**
- * 树状图节点右键菜单：延伸分支 / 从新开始 / 收藏 / 保留 / 跳转
+ * 树状图节点右键菜单：收藏 / 保留 / 跳转（分支与从新开始在消息输入卡片中提供）
  */
 import { useEffect, useState } from "react";
-import {
-  Bookmark,
-  CornerUpRight,
-  GitBranch,
-  Pin,
-  Sparkles,
-} from "lucide-react";
+import { Bookmark, CornerUpRight, Pin } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
-import { BranchDialog } from "../modals/BranchDialog";
-import { NewStartDialog } from "../modals/NewStartDialog";
 import type { TreeNode } from "../../core/db";
 
 interface GraphNodeMenuProps {
@@ -29,8 +21,6 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
   const toggleKeep = useChatStore((s) => s.toggleKeep);
   const setUiError = useChatStore((s) => s.setUiError);
   const [node, setNode] = useState<TreeNode | null>(null);
-  const [branchOpen, setBranchOpen] = useState(false);
-  const [newStartOpen, setNewStartOpen] = useState(false);
 
   useEffect(() => {
     if (!repos) return;
@@ -47,33 +37,12 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
   };
 
   return (
-    <>
-      <div
-        ref={menuRef}
-        style={menuStyle}
-        className="w-44 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
-          onClick={() => {
-            setBranchOpen(true);
-            onClose();
-          }}
-        >
-          <GitBranch size={13} className="text-neutral-400" />
-          延伸分支（新会话）
-        </button>
-        <button
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
-          onClick={() => {
-            setNewStartOpen(true);
-            onClose();
-          }}
-        >
-          <Sparkles size={13} className="text-neutral-400" />
-          从新开始（不继承）
-        </button>
+    <div
+      ref={menuRef}
+      style={menuStyle}
+      className="w-44 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
+      onClick={(e) => e.stopPropagation()}
+    >
         <button
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
           onClick={() => {
@@ -114,19 +83,6 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
         >
           🔀 合并（拖拽触发）
         </button>
-      </div>
-
-      {/* 延伸分支 / 从新开始对话框（以该节点为父） */}
-      <BranchDialog
-        open={branchOpen}
-        parentNodeId={nodeId}
-        onClose={() => setBranchOpen(false)}
-      />
-      <NewStartDialog
-        open={newStartOpen}
-        parentNodeId={nodeId}
-        onClose={() => setNewStartOpen(false)}
-      />
-    </>
+    </div>
   );
 }

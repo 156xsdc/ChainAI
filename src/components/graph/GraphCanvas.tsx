@@ -119,14 +119,29 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     members: Array<{ id: string; x: number; y: number }>;
   } | null>(null);
 
+  /** 多选节点拖拽起点（框选 ≥2 个节点后拖动其中一个，整组一起移动） */
+  const multiDragStart = useRef<{
+    startPos: { x: number; y: number };
+    members: Array<{ id: string; x: number; y: number }>;
+  } | null>(null);
+
   const handleNodeDragStart: OnNodeDrag<FlowNode> = (_, node) => {
-    if (node.type !== "group") return;
-    const g = data?.groups.find((x) => `group-${x.group.id}` === node.id);
-    if (!g) return;
-    groupDragStart.current = {
-      startPos: { x: node.position.x ?? 0, y: node.position.y ?? 0 },
-      members: g.memberIds.map((id) => ({ id, ...nodePos(id) })),
-    };
+    if (node.type === "group") {
+      const g = data?.groups.find((x) => `group-${x.group.id}` === node.id);
+      if (!g) return;
+      groupDragStart.current = {
+        startPos: { x: node.position.x ?? 0, y: node.position.y ?? 0 },
+        members: g.memberIds.map((id) => ({ id, ...nodePos(id) })),
+      };
+      return;
+    }
+    // 多选拖拽：框选 ≥2 个节点时，拖动其中任意一个 → 所有选中节点一起移动
+    if (selectedIds.size > 1 && selectedIds.has(node.id)) {
+      multiDragStart.current = {
+        startPos: { x: node.position.x ?? 0, y: node.position.y ?? 0 },
+        members: [...selectedIds].map((id) => ({ id, ...nodePos(id) })),
+      };
+    }
   };
 
   const handleNodeDrag: OnNodeDrag<FlowNode> = (_, node) => {
@@ -138,6 +153,16 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       const updates: Record<string, { x: number; y: number }> = {};
       for (const m of s.members) updates[m.id] = { x: m.x + dx, y: m.y + dy };
       // 内存更新（高频，不写库），成员节点实时跟随
+      setManualPositionsLocal(updates);
+      return;
+    }
+    const m = multiDragStart.current;
+    if (m) {
+      // 多选：所有选中节点按同一位移实时跟随
+      const dx = (node.position.x ?? 0) - m.startPos.x;
+      const dy = (node.position.y ?? 0) - m.startPos.y;
+      const updates: Record<string, { x: number; y: number }> = {};
+      for (const mem of m.members) updates[mem.id] = { x: mem.x + dx, y: mem.y + dy };
       setManualPositionsLocal(updates);
       return;
     }
@@ -155,6 +180,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       groupDragStart.current = null;
       return;
     }
+    // 多选拖拽结束：清起点（位置已在拖动中实时更新，下方统一持久化）
+    multiDragStart.current = null;
     const inst = rfRef.current;
     if (!inst) {
       persistManualPositions();

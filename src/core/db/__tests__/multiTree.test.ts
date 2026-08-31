@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "./helpers";
 import { importMarkdownAsTree } from "../../importExport/markdown";
+import { TreeService } from "../../tree/treeService";
 
 describe("多树场景", () => {
   it("Markdown 导入的节点应归属当前树（tree_id 非空）", async () => {
@@ -89,5 +90,48 @@ describe("多树场景", () => {
 
     const favs = await repos.favorites.getAll();
     expect(favs).toHaveLength(1);
+  });
+
+  it("分支节点应归属父节点所在树（tree_id 非空，树状图可见）", async () => {
+    const repos = await createTestDb();
+    const treeA = await repos.trees.create("树A");
+    const treeB = await repos.trees.create("树B");
+    const service = new TreeService(repos.backend, repos.nodes, repos.sessions);
+
+    // 树A下建根，再创建分支（模拟 chatStore.createBranch 调用契约）
+    const root = await repos.nodes.createNode({ question: "根", treeId: treeA.id });
+    const { node: branch } = await service.createBranch(root.id, {
+      name: "子分支",
+      treeId: treeA.id,
+    });
+    const { node: branch2 } = await service.createBranch(root.id, {
+      name: "漏传treeId的分支（应继承父节点树）",
+    });
+
+    expect((await repos.nodes.getNode(branch.id))?.treeId).toBe(treeA.id);
+    // 即使调用方漏传 treeId，也应继承父节点的树
+    expect((await repos.nodes.getNode(branch2.id))?.treeId).toBe(treeA.id);
+
+    // 树A的图数据应包含分支节点；树B不应包含
+    const nodesInA = await repos.nodes.getAllActive(treeA.id);
+    expect(nodesInA.map((n) => n.id)).toContain(branch.id);
+    expect(nodesInA.map((n) => n.id)).toContain(branch2.id);
+    const nodesInB = await repos.nodes.getAllActive(treeB.id);
+    expect(nodesInB.map((n) => n.id)).not.toContain(branch.id);
+  });
+
+  it("合并节点应归属父节点所在树", async () => {
+    const repos = await createTestDb();
+    const treeA = await repos.trees.create("树A");
+    const service = new TreeService(repos.backend, repos.nodes, repos.sessions);
+
+    const n1 = await repos.nodes.createNode({ question: "1", treeId: treeA.id });
+    const n2 = await repos.nodes.createNode({ question: "2", treeId: treeA.id });
+    const { node: merged } = await service.createMerge([n1.id, n2.id], {});
+
+    expect((await repos.nodes.getNode(merged.id))?.treeId).toBe(treeA.id);
+    expect(
+      (await repos.nodes.getAllActive(treeA.id)).map((n) => n.id)
+    ).toContain(merged.id);
   });
 });

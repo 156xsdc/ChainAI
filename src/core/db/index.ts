@@ -101,6 +101,21 @@ export async function initSchema(db: SqlBackend): Promise<void> {
       [crypto.randomUUID(), "默认树", new Date().toISOString()]
     );
   }
+  // 迁移：分支/新开始/合并节点缺失 tree_id 时，按父链补齐归属树
+  // （历史版本 createBranch 未传 treeId，导致节点 tree_id 为 NULL、树状图不可见；
+  //   逐层补齐，最多 50 轮防死循环）
+  for (let i = 0; i < 50; i++) {
+    const fixed = await db.execute(
+      `UPDATE nodes SET tree_id = (
+         SELECT p.tree_id FROM edges e
+         JOIN nodes p ON p.id = e.parent_id
+         WHERE e.child_id = nodes.id AND p.tree_id IS NOT NULL AND p.is_active = 1
+         ORDER BY e.created_at ASC LIMIT 1
+       )
+       WHERE tree_id IS NULL AND is_active = 1`
+    );
+    if (fixed.rowsAffected === 0) break;
+  }
   const firstTree = await db.select<{ id: string }>(
     `SELECT id FROM trees ORDER BY created_at ASC, rowid ASC LIMIT 1`
   );

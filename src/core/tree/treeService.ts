@@ -87,13 +87,16 @@ export class TreeService {
     const isNewStart = mode === "none";
     const nodeType: NodeType = isNewStart ? "new_start" : "normal";
     const relation: RelationType = isNewStart ? "non_inherit" : "inherit";
+    // 未显式指定树时，继承父节点的树（避免 tree_id 为 NULL 导致树状图不可见）
+    const parentNode = await this.nodes.getNode(parentNodeId);
+    const treeId = input.treeId ?? parentNode?.treeId ?? null;
 
     const node = await this.nodes.createNode({
       question: input.question ?? "",
       type: nodeType,
       color: isNewStart ? "#9a6b3f" : input.color, // 新开始节点用特殊颜色
       summary: isNewStart ? "新开始" : undefined,
-      treeId: input.treeId,
+      treeId,
     });
 
     try {
@@ -137,12 +140,16 @@ export class TreeService {
       throw new Error("合并至少需要两个父节点");
     }
 
+    // 未显式指定树时，继承第一个父节点的树
+    const firstParent = await this.nodes.getNode(parentNodeIds[0]);
+    const treeId = input.treeId ?? firstParent?.treeId ?? null;
+
     const node = await this.nodes.createNode({
       question: input.question ?? "",
       type: "merge",
       color: input.color ?? "#5b5bd6", // 合并节点特殊颜色
       summary: "合并",
-      treeId: input.treeId,
+      treeId,
     });
 
     try {

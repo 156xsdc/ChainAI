@@ -64,4 +64,29 @@ describe("旧库迁移", () => {
     const byTree = await repo.nodes.getAllActive(tree.id);
     expect(byTree).toHaveLength(1);
   });
+
+  it("迁移：历史分支节点缺失 tree_id 时按父链补齐归属树", async () => {
+    const backend = new NodeSqliteBackend(":memory:");
+    await initSchema(backend);
+    const repo = createRepositories(backend);
+    const treeA = await repo.trees.create("树A");
+
+    // 模拟历史数据：树A的节点 + 两个 tree_id 为 NULL 的分支节点（父链在树A）
+    const root = await repo.nodes.createNode({ question: "根", treeId: treeA.id });
+    const branch1 = await repo.nodes.createNode({ question: "分支1" }); // NULL
+    await repo.nodes.addEdge(root.id, branch1.id);
+    const branch2 = await repo.nodes.createNode({ question: "分支2" }); // NULL
+    await repo.nodes.addEdge(branch1.id, branch2.id); // 多层 NULL
+
+    // 重新执行迁移（模拟升级后首次启动）
+    await initSchema(backend);
+
+    // 两个分支节点都应按父链归属树A（而非第一棵树）
+    expect((await repo.nodes.getNode(branch1.id))?.treeId).toBe(treeA.id);
+    expect((await repo.nodes.getNode(branch2.id))?.treeId).toBe(treeA.id);
+    const inA = await repo.nodes.getAllActive(treeA.id);
+    expect(inA.map((n) => n.id)).toEqual(
+      expect.arrayContaining([root.id, branch1.id, branch2.id])
+    );
+  });
 });

@@ -502,25 +502,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createBranch: async (parentNodeId, params) => {
-    const { treeService } = get();
+    const { treeService, currentTreeId } = get();
     if (!treeService) return "";
-    const { node } = await treeService.createBranch(parentNodeId, params);
+    const { node } = await treeService.createBranch(parentNodeId, {
+      ...params,
+      treeId: currentTreeId,
+    });
     await get().navigateTo(node.id);
     return node.id;
   },
 
   createNewStart: async (parentNodeId, name) => {
-    const { treeService } = get();
+    const { treeService, currentTreeId } = get();
     if (!treeService) return "";
-    const { node } = await treeService.createNewStart(parentNodeId, { name });
+    const { node } = await treeService.createNewStart(parentNodeId, {
+      name,
+      treeId: currentTreeId,
+    });
     await get().navigateTo(node.id);
     return node.id;
   },
 
   createMerge: async (parentNodeIds, params) => {
-    const { treeService } = get();
+    const { treeService, currentTreeId } = get();
     if (!treeService) return "";
-    const { node } = await treeService.createMerge(parentNodeIds, params);
+    const { node } = await treeService.createMerge(parentNodeIds, {
+      ...params,
+      treeId: currentTreeId,
+    });
     await get().navigateTo(node.id);
     return node.id;
   },

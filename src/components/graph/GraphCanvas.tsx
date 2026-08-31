@@ -203,6 +203,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         )
       : Infinity;
     if (target && distance < MERGE_DISTANCE) {
+      // 先落定成员位置（多选拖拽时），再触发合并
+      persistManualPositions();
       void handleMergeRequest(node.id, target.id);
     } else {
       // 位置已在拖拽中实时更新到内存，这里统一持久化一次
@@ -236,6 +238,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       }
     }
     setMergeState({ parentNodeIds: [...selectedIds] });
+    // 清空选择，避免合并对话框打开时操作条残留
+    setSelectedIds(new Set());
   };
 
   // ---- 分组操作 ----

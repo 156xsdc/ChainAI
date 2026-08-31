@@ -43,14 +43,22 @@ export function MergeDialog({
   }, [open, parentNodeIds, repos]);
 
   const handleConfirm = async () => {
-    if (busy) return;
+    if (busy || parentNodeIds.length < 2) return;
     setBusy(true);
-    await createMerge(parentNodeIds, {
-      name: name.trim() || undefined,
-      inheritCount,
-    });
-    setBusy(false);
-    onClose();
+    try {
+      await createMerge(parentNodeIds, {
+        name: name.trim() || undefined,
+        inheritCount,
+      });
+      onClose();
+    } catch (err) {
+      // 合并失败：提示并恢复可操作状态（避免 busy 卡死）
+      useChatStore.getState().setUiError(
+        `合并失败：${(err as Error).message}`
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const truncate = (s: string, n = 18) =>

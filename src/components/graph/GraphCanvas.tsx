@@ -290,14 +290,21 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     bumpGraphVersion();
   };
 
-  /** 导出画布为 PNG（html-to-image） */
+  /** 导出画布为 PNG（html-to-image）
+   * 只对内容视口（.react-flow__viewport）截图：
+   * - 不含 MiniMap / Controls / 导出按钮等 UI 元素
+   * - transform 覆盖视口自身的缩放平移，按节点包围盒计算 → 内容完整且居中 */
   const exportPng = async (allNodes: FlowNode[]) => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    const viewport = container?.querySelector(
+      ".react-flow__viewport"
+    ) as HTMLElement | null;
+    if (!container || !viewport) return;
     try {
       const nodesBounds = getNodesBounds(allNodes);
       const imageWidth = 1280;
       const imageHeight = 960;
-      const viewport = getViewportForBounds(
+      const vp = getViewportForBounds(
         nodesBounds,
         imageWidth,
         imageHeight,
@@ -305,8 +312,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
         2,
         0.1
       );
-      const transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
-      const dataUrl = await toPng(containerRef.current, {
+      const transform = `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`;
+      const dataUrl = await toPng(viewport, {
         backgroundColor: "#fafafa",
         width: imageWidth,
         height: imageHeight,

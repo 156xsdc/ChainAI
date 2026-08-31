@@ -134,4 +134,33 @@ describe("多树场景", () => {
       (await repos.nodes.getAllActive(treeA.id)).map((n) => n.id)
     ).toContain(merged.id);
   });
+
+  it("合并节点的上下文应综合所有父链消息（去重+按时间排序）", async () => {
+    const repos = await createTestDb();
+    const service = new TreeService(repos.backend, repos.nodes, repos.sessions);
+
+    const root = await repos.nodes.createNode({ question: "根问题", answer: "根回答" });
+    const a = await service.addChild(root.id, { question: "A问题", answer: "A回答" });
+    const a1 = await service.addChild(a.node.id, { question: "A1问题", answer: "A1回答" });
+    const b = await service.addChild(root.id, { question: "B问题", answer: "B回答" });
+    const b1 = await service.addChild(b.node.id, { question: "B1问题", answer: "B1回答" });
+    const { node: m } = await service.createMerge([a1.node.id, b1.node.id], {});
+
+    const ctx = await service.getContextPath(m.id);
+    const contents = ctx.map((c) => c.content);
+
+    // 两条父链 + 根（共享，去重后一次）全部包含
+    expect(contents).toContain("根问题");
+    expect(contents).toContain("A问题");
+    expect(contents).toContain("A1问题");
+    expect(contents).toContain("B问题");
+    expect(contents).toContain("B1问题");
+    // 共享祖先只出现一次
+    expect(contents.filter((c) => c === "根问题")).toHaveLength(1);
+    // 顺序按创建时间（根在前）
+    expect(contents[0]).toBe("根问题");
+    // 普通分支节点（非合并）上下文不变：仅主链
+    const ctxA = await service.getContextPath(a1.node.id);
+    expect(ctxA.map((c) => c.content)).not.toContain("B问题");
+  });
 });

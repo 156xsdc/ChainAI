@@ -93,14 +93,14 @@ describe("TreeService", () => {
     ]);
   });
 
-  it("合并节点上下文链从多父回溯（getContextPath 主链）", async () => {
+  it("合并节点上下文链综合所有父链（getContextPath 多父回溯）", async () => {
     const a = await repo.nodes.createNode({ question: "QA", answer: "AA" });
     const b = await repo.nodes.createNode({ question: "QB", answer: "AB" });
     const merge = await service.createMerge([a.id, b.id], { name: "合并" });
 
     const path = await service.getContextPath(merge.node.id);
     const questions = path.filter((m) => m.role === "user").map((m) => m.content);
-    // 主链 = 第一条父链 A → 合并
-    expect(questions).toEqual(["QA"]);
+    // 综合所有父链：A 与 B 的问题都在
+    expect(questions).toEqual(expect.arrayContaining(["QA", "QB"]));
   });
 });

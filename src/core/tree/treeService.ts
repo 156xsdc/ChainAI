@@ -175,31 +175,88 @@ export class TreeService {
   }
 
   /** 当前会话的上下文链（从根到当前节点的完整消息序列） */
+  /**
+   * 上下文链（从根到当前节点的完整消息序列）
+   * 合并节点（多父）会综合**所有父链**的消息：递归收集各父链路径，
+   * 去重（共享祖先只出现一次），按节点创建时间排序。
+   */
   async getContextPath(
     nodeId: string
   ): Promise<Array<{ role: "user" | "assistant"; content: string; nodeId: string }>> {
-    const path = await this.nodes.getPathToRoot(nodeId);
-    const messages: Array<{
+    const entries: Array<{
+      nodeId: string;
       role: "user" | "assistant";
       content: string;
-      nodeId: string;
+      createdAt: string;
     }> = [];
-    for (const seg of path) {
-      if (seg.node.question) {
-        messages.push({
-          role: "user",
-          content: seg.node.question,
-          nodeId: seg.node.id,
-        });
+    const seen = new Set<string>();
+    await this.collectAncestors(nodeId, seen, entries);
+    // 确保自身消息在列（多父时 collectAncestors 已收集，seen 去重）
+    await this.pushNodeMessages(nodeId, seen, entries);
+    entries.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return entries.map((e) => ({
+      role: e.role,
+      content: e.content,
+      nodeId: e.nodeId,
+    }));
+  }
+
+  /** 递归收集祖先消息：多父节点展开所有父链，单父/根沿主链回溯 */
+  private async collectAncestors(
+    nodeId: string,
+    seen: Set<string>,
+    entries: Array<{
+      nodeId: string;
+      role: "user" | "assistant";
+      content: string;
+      createdAt: string;
+    }>
+  ): Promise<void> {
+    const parents = await this.nodes.getParentsWithEdge(nodeId);
+    if (parents.length > 1) {
+      // 合并节点：自身消息 + 所有父链递归
+      await this.pushNodeMessages(nodeId, seen, entries);
+      for (const p of parents) {
+        await this.collectAncestors(p.parent.id, seen, entries);
       }
-      if (seg.node.answer) {
-        messages.push({
-          role: "assistant",
-          content: seg.node.answer,
-          nodeId: seg.node.id,
-        });
-      }
+      return;
     }
-    return messages;
+    const path = await this.nodes.getPathToRoot(nodeId);
+    for (const seg of path) {
+      await this.pushNodeMessages(seg.node.id, seen, entries);
+    }
+  }
+
+  /** 收集单个节点的消息（去重） */
+  private async pushNodeMessages(
+    nodeId: string,
+    seen: Set<string>,
+    entries: Array<{
+      nodeId: string;
+      role: "user" | "assistant";
+      content: string;
+      createdAt: string;
+    }>
+  ): Promise<void> {
+    if (seen.has(nodeId)) return;
+    const n = await this.nodes.getNode(nodeId);
+    if (!n) return;
+    seen.add(nodeId);
+    if (n.question) {
+      entries.push({
+        nodeId: n.id,
+        role: "user",
+        content: n.question,
+        createdAt: n.createdAt,
+      });
+    }
+    if (n.answer) {
+      entries.push({
+        nodeId: n.id,
+        role: "assistant",
+        content: n.answer,
+        createdAt: n.createdAt,
+      });
+    }
   }
 }

@@ -33,12 +33,14 @@ export function useGraphData(): GraphData | null {
     if (!repos) return;
     let cancelled = false;
     (async () => {
-      const [nodes, edges, pathSegs] = await Promise.all([
+      // 路径高亮：使用多父展开的祖先集合（合并节点时所有父链都高亮）
+      const ancestors = currentNodeId
+        ? await repos.nodes.getAncestors(currentNodeId)
+        : [];
+      if (cancelled) return;
+      const [nodes, edges] = await Promise.all([
         repos.nodes.getAllActive(currentTreeId),
         repos.nodes.getAllActiveEdges(currentTreeId),
-        currentNodeId
-          ? repos.nodes.getPathToRoot(currentNodeId)
-          : Promise.resolve([]),
       ]);
       if (cancelled) return;
       // 轻量圆点布局（轨道间距放宽，分支多时避免拥挤）
@@ -57,12 +59,14 @@ export function useGraphData(): GraphData | null {
         });
       }
       if (cancelled) return;
+      const pathIds = new Set(ancestors.map((a) => a.id));
+      if (currentNodeId) pathIds.add(currentNodeId);
       setData({
         nodes,
         edges,
         layout,
         currentId: currentNodeId,
-        pathIds: new Set(pathSegs.map((p) => p.node.id)),
+        pathIds,
         groups,
       });
     })();

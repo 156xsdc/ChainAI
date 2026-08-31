@@ -130,14 +130,21 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   };
 
   const handleNodeDrag: OnNodeDrag<FlowNode> = (_, node) => {
-    if (node.type !== "group" || !groupDragStart.current) return;
-    const s = groupDragStart.current;
-    const dx = (node.position.x ?? 0) - s.startPos.x;
-    const dy = (node.position.y ?? 0) - s.startPos.y;
-    const updates: Record<string, { x: number; y: number }> = {};
-    for (const m of s.members) updates[m.id] = { x: m.x + dx, y: m.y + dy };
-    // 内存更新（高频，不写库），成员节点实时跟随
-    setManualPositionsLocal(updates);
+    if (node.type === "group") {
+      if (!groupDragStart.current) return;
+      const s = groupDragStart.current;
+      const dx = (node.position.x ?? 0) - s.startPos.x;
+      const dy = (node.position.y ?? 0) - s.startPos.y;
+      const updates: Record<string, { x: number; y: number }> = {};
+      for (const m of s.members) updates[m.id] = { x: m.x + dx, y: m.y + dy };
+      // 内存更新（高频，不写库），成员节点实时跟随
+      setManualPositionsLocal(updates);
+      return;
+    }
+    // 单节点：实时更新内存位置（受控渲染跟手），松手时持久化
+    setManualPositionsLocal({
+      [node.id]: { x: node.position.x ?? 0, y: node.position.y ?? 0 },
+    });
   };
 
   // ---- 拖拽合并 ----
@@ -149,7 +156,10 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       return;
     }
     const inst = rfRef.current;
-    if (!inst) return;
+    if (!inst) {
+      persistManualPositions();
+      return;
+    }
     const intersecting = inst.getIntersectingNodes(node);
     const target = intersecting.find((n) => n.id !== node.id) ?? intersecting[0];
     const distance = target
@@ -167,10 +177,8 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     if (target && distance < MERGE_DISTANCE) {
       void handleMergeRequest(node.id, target.id);
     } else {
-      setManualPosition(node.id, {
-        x: node.position.x,
-        y: node.position.y,
-      });
+      // 位置已在拖拽中实时更新到内存，这里统一持久化一次
+      persistManualPositions();
     }
   };
 

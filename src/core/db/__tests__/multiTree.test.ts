@@ -135,6 +135,26 @@ describe("多树场景", () => {
     ).toContain(merged.id);
   });
 
+  it("getAncestors 返回合并节点的所有父链祖先（多父展开）", async () => {
+    const repos = await createTestDb();
+    const service = new TreeService(repos.backend, repos.nodes, repos.sessions);
+
+    const root = await repos.nodes.createNode({ question: "根" });
+    const a = await service.addChild(root.id, { question: "A" });
+    const a1 = await service.addChild(a.node.id, { question: "A1" });
+    const b = await service.addChild(root.id, { question: "B" });
+    const b1 = await service.addChild(b.node.id, { question: "B1" });
+    const { node: m } = await service.createMerge([a1.node.id, b1.node.id], {});
+
+    const ancestors = await repos.nodes.getAncestors(m.id);
+    const ids = ancestors.map((n) => n.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([root.id, a.node.id, a1.node.id, b.node.id, b1.node.id])
+    );
+    // 不含自身
+    expect(ids).not.toContain(m.id);
+  });
+
   it("合并节点的上下文应综合所有父链消息（去重+按时间排序）", async () => {
     const repos = await createTestDb();
     const service = new TreeService(repos.backend, repos.nodes, repos.sessions);

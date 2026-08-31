@@ -28,9 +28,16 @@ export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
       : node.type === "merge"
         ? "#8d8dd6" // 淡紫
         : "#cfcfcf"; // 淡灰
-  // 颜色永远表示类型（合并=淡紫 / 新开始=淡棕 / 普通=淡灰），
-  // 状态用描边环区分：当前=深色粗环，路径=中环，其余无环
-  const dotColor = baseColor;
+  // 合并/新开始：颜色永远表示类型（淡紫/淡棕），状态用描边环区分；
+  // 普通节点：类型色即淡灰，路径/当前需更深色才明显（高亮可辨识）
+  const dotColor =
+    node.type === "merge" || node.type === "new_start"
+      ? baseColor
+      : isCurrent
+        ? "#1a1a1a"
+        : isOnPath
+          ? "#9a9a9a"
+          : baseColor;
   const dotSize = isCurrent ? 11 : isOnPath ? 9.5 : 8;
   const boxShadow = isCurrent
     ? "0 0 0 1.5px #ffffff, 0 0 0 3.5px #1a1a1a"

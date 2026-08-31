@@ -99,14 +99,15 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
     if (!data?.currentId || !data.layout) return;
     if (prevCurrent.current === data.currentId) return;
     prevCurrent.current = data.currentId;
-    const pos = data.layout.positions.get(data.currentId);
+    // 定位到实际显示位置（手动优先）——避免锁定在自动布局位置上
+    const pos = nodePos(data.currentId);
     if (pos) {
       rfRef.current?.setCenter(pos.x + NODE_W / 2, pos.y + NODE_H / 2, {
         zoom: 1.2,
         duration: 350,
       });
     }
-  }, [data]);
+  }, [data, manualPositions]);
 
   /** 获取节点显示位置（手动优先） */
   const nodePos = (id: string) => {

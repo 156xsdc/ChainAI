@@ -7,6 +7,7 @@ export type ChatErrorCode =
   | "auth" // 认证失败（401/403）
   | "rate_limit" // 限流（429）
   | "bad_request" // 请求错误（4xx）
+  | "context_exceeded" // 上下文超出模型限制
   | "server" // 服务端错误（5xx）
   | "timeout" // 超时
   | "aborted" // 用户中断
@@ -49,6 +50,21 @@ export class ChatError extends Error {
             status,
             providerId,
           });
+        }
+        // 上下文超限（Ollama / OpenAI 兼容服务常见）：给出可操作建议
+        if (
+          body &&
+          /context (size|length|window)|exceeds? .*available|too (long|large)|maximum context/i.test(
+            body
+          )
+        ) {
+          const tokens = body.match(/(\d+)\s*tokens?/);
+          const detail = tokens ? `（约 ${tokens[1]} tokens）` : "";
+          return new ChatError(
+            "context_exceeded",
+            `上下文超出模型限制${detail}。建议：创建新分支并调小继承条数；或在 Ollama 中调大模型上下文（/set parameter num_ctx 8192）`,
+            { status, providerId }
+          );
         }
         return new ChatError(
           "bad_request",

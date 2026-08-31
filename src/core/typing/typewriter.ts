@@ -52,7 +52,7 @@ export class Typewriter {
 
   /**
    * 流结束：加速吐完剩余内容（不瞬间闪现全文）
-   * @returns Promise，剩余内容全部显示后 resolve
+   * @returns Promise，剩余内容全部显示后 resolve（带安全超时，避免挂起）
    */
   finish(): Promise<void> {
     return new Promise((resolve) => {
@@ -65,6 +65,14 @@ export class Typewriter {
       this.finishing = true;
       if (!this.timer) this.start(); // 内容不足阈值尚未启动：加速吐完
       this.onDone = resolve;
+      // 安全超时：极端情况（如后台窗口 setInterval 被节流）不挂起调用方
+      setTimeout(() => {
+        if (this.onDone) {
+          this.stop();
+          this.onDone();
+          this.onDone = null;
+        }
+      }, 3000);
     });
   }
 

@@ -77,11 +77,11 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
         <button
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-400 hover:bg-neutral-100"
           onClick={() => {
-            setUiError("合并：拖拽该节点到另一个节点上即可触发综合合并");
+            setUiError("合并：拖拽该节点到另一个节点，或框选多个节点后点击「合并」");
             onClose();
           }}
         >
-          🔀 合并（拖拽触发）
+          🔀 合并（拖拽 / 框选触发）
         </button>
     </div>
   );

@@ -41,10 +41,10 @@ export function useGraphData(): GraphData | null {
           : Promise.resolve([]),
       ]);
       if (cancelled) return;
-      // 轻量圆点布局
+      // 轻量圆点布局（轨道间距放宽，分支多时避免拥挤）
       const layout = computeGitLayout(nodes, edges, {
-        laneWidth: 84,
-        rowHeight: 52,
+        laneWidth: 110,
+        rowHeight: 56,
         nodeWidth: 26,
       });
       // 加载节点分组（虚线框）

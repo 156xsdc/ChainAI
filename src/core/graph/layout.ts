@@ -109,11 +109,33 @@ export function computeGitLayout(
   const laneLastRow = new Map<number, number>();
   const childCount = new Map<string, number>(); // 父 → 已分配子数
 
-  /** 找空闲轨道：避开指定轨道，且当前行未被占用 */
+  /**
+   * 找空闲轨道：
+   * - 有 preferred（父轨道）：从父轨道两侧逐层向外扩展，贴近父链，减少连线跨度与交叉
+   * - 无 preferred（根）：从 0 开始找
+   * 均要求当前行 r 未被占用
+   */
   const findLane = (preferred: number[], r: number): number => {
+    if (preferred.length > 0) {
+      let radius = 1;
+      for (;;) {
+        for (const p of preferred) {
+          for (const cand of [p - radius, p + radius]) {
+            if (
+              cand >= 0 &&
+              !preferred.includes(cand) &&
+              laneLastRow.get(cand) !== r
+            ) {
+              return cand;
+            }
+          }
+        }
+        radius++;
+      }
+    }
     let lane = 0;
     for (;;) {
-      if (!preferred.includes(lane) && laneLastRow.get(lane) !== r) return lane;
+      if (laneLastRow.get(lane) !== r) return lane;
       lane++;
     }
   };
@@ -203,15 +225,18 @@ export function computeGitLayout(
       if (kidPositions.length === 0) continue;
       const centerX =
         kidPositions.reduce((sum, p) => sum + p.x, 0) / kidPositions.length;
-      // 防重叠：同层其他节点距中心过近则不调整
+      // 对齐到 lane 网格（避免"半格"位置导致的视觉拥挤与连线交叉）
+      const alignedX = Math.round(centerX / laneWidth) * laneWidth;
+      // 防重叠：同层其他节点距目标位置过近则不调整（阈值略大于节点直径）
       const conflict = rowIds.some((o) => {
         if (o === id) return false;
         const op = positions.get(o)!;
-        return Math.abs(op.x - centerX) < nodeWidth;
+        return Math.abs(op.x - alignedX) < nodeWidth * 1.2;
       });
       if (!conflict) {
         const cur = positions.get(id)!;
-        positions.set(id, { ...cur, x: centerX });
+        // 仅调整 x（视觉位置）；lane 字段保留分配轨道（链条延续语义）
+        positions.set(id, { ...cur, x: alignedX });
       }
     }
   }

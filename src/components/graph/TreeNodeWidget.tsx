@@ -28,8 +28,13 @@ export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
       : node.type === "merge"
         ? "#8d8dd6" // 淡紫
         : "#cfcfcf"; // 淡灰
-  // 类型色始终可见（路径节点用描边+大小区分，不再覆盖为灰色）
-  const dotColor = isCurrent ? "#1a1a1a" : baseColor;
+  // 类型色始终可见：合并/新开始节点在路径上保留类型色；
+  // 普通节点在路径上用灰色高亮（保持路径可辨识）
+  const dotColor = isCurrent
+    ? "#1a1a1a"
+    : isOnPath && node.type === "normal"
+      ? "#9a9a9a"
+      : baseColor;
   const dotSize = isCurrent ? 11 : isOnPath ? 9.5 : 8;
 
   return (

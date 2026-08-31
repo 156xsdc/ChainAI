@@ -174,7 +174,6 @@ export class TreeService {
     }
   }
 
-  /** 当前会话的上下文链（从根到当前节点的完整消息序列） */
   /**
    * 上下文链（从根到当前节点的完整消息序列）
    * 合并节点（多父）会综合**所有父链**的消息：递归收集各父链路径，
@@ -212,6 +211,8 @@ export class TreeService {
       createdAt: string;
     }>
   ): Promise<void> {
+    // 防环保护（异常数据可能形成循环边）
+    if (seen.has(nodeId)) return;
     const parents = await this.nodes.getParentsWithEdge(nodeId);
     if (parents.length > 1) {
       // 合并节点：自身消息 + 所有父链递归

@@ -43,11 +43,20 @@ export function InputCard() {
     () => setAiMenuOpen(false),
     aiMenuOpen
   );
-  const [aiConfigs, setAiConfigs] = useState<ProviderConfig[]>(
-    providerManager.getConfigs()
-  );
+  const [aiConfigs, setAiConfigs] = useState<ProviderConfig[]>([]);
   const activeAi = providerManager.getActiveConfig();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // AI 配置在 init 时异步加载：repos 就绪后同步一次（避免下拉永远为空）
+  useEffect(() => {
+    if (repos) setAiConfigs(providerManager.getConfigs());
+  }, [repos]);
+
+  /** 打开下拉时总是从 providerManager 刷新（覆盖设置中增删改后的场景） */
+  const toggleAiMenu = () => {
+    setAiConfigs(providerManager.getConfigs());
+    setAiMenuOpen((v) => !v);
+  };
 
   /** 快捷切换 AI 服务（切换默认配置并持久化） */
   const switchAi = async (configId: string) => {
@@ -189,7 +198,7 @@ export function InputCard() {
             <div className="relative">
               <button
                 className="flex max-w-[140px] items-center gap-1 rounded-lg px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
-                onClick={() => setAiMenuOpen((v) => !v)}
+                onClick={toggleAiMenu}
                 title="切换 AI 服务"
               >
                 <Sparkles size={12} className="shrink-0 text-neutral-400" />

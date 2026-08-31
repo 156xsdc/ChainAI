@@ -421,7 +421,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 构建上下文：继承模式 + 时间权重压缩
     set({ preparing: true });
     const session = await repos.sessions.getByStartNode(nodeId);
-    const inheritCount = session?.inheritCount ?? 10; // -1=全部, 0=不继承
+    // 分支节点用会话继承数；普通对话用全局默认（ai.defaultInheritCount）
+    let inheritCount = session?.inheritCount;
+    if (inheritCount === undefined || inheritCount === null) {
+      inheritCount = await repos.settings.get<number>("ai.defaultInheritCount", 10);
+    }
     const inheritMode =
       inheritCount < 0 ? "all" : inheritCount === 0 ? "none" : "count";
     const compressSettings = await repos.settings.get<{

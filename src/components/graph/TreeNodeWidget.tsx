@@ -28,14 +28,15 @@ export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
       : node.type === "merge"
         ? "#8d8dd6" // 淡紫
         : "#cfcfcf"; // 淡灰
-  // 类型色始终可见：合并/新开始节点在路径上保留类型色；
-  // 普通节点在路径上用灰色高亮（保持路径可辨识）
-  const dotColor = isCurrent
-    ? "#1a1a1a"
-    : isOnPath && node.type === "normal"
-      ? "#9a9a9a"
-      : baseColor;
+  // 颜色永远表示类型（合并=淡紫 / 新开始=淡棕 / 普通=淡灰），
+  // 状态用描边环区分：当前=深色粗环，路径=中环，其余无环
+  const dotColor = baseColor;
   const dotSize = isCurrent ? 11 : isOnPath ? 9.5 : 8;
+  const boxShadow = isCurrent
+    ? "0 0 0 1.5px #ffffff, 0 0 0 3.5px #1a1a1a"
+    : isOnPath
+      ? "0 0 0 1px #ffffff, 0 0 0 2px rgba(26,26,26,0.4)"
+      : undefined;
 
   return (
     <div className="group relative flex h-full w-full cursor-grab items-center justify-center active:cursor-grabbing">
@@ -46,11 +47,7 @@ export function TreeNodeWidget({ data }: NodeProps<TreeNodeFlowNode>) {
           width: dotSize,
           height: dotSize,
           background: dotColor,
-          boxShadow: isCurrent
-            ? "0 0 0 1.5px #ffffff, 0 0 0 3px rgba(26,26,26,0.25)"
-            : isOnPath
-              ? "0 0 0 1px #ffffff"
-              : undefined,
+          boxShadow,
         }}
       >
         {/* 角标：收藏 / 保留 */}

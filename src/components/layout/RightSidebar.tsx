@@ -301,6 +301,24 @@ export function RightSidebar() {
     if (note) scheduleSave(note, {}, text); // 显式传新内容
   };
 
+  /** 手动立即保存（清防抖定时器 + 写文件 + 更新元数据） */
+  const handleSaveNow = async () => {
+    const note = notes.find((n) => n.id === selectedId);
+    if (!note || !repos) return;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    await repos.notes.update(note.id, {
+      title,
+      color,
+      tags: tagsText.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+    });
+    await writeNoteContent(repos, note, content);
+    useChatStore.getState().setNotice("💾 便签已保存");
+    void loadNotes();
+  };
+
   const handleTitleChange = (t: string) => {
     setTitle(t);
     const note = notes.find((n) => n.id === selectedId);
@@ -357,8 +375,8 @@ export function RightSidebar() {
         <div className="flex items-center gap-0.5">
           <button
             className="rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-            title="新建便签 (Ctrl+N)"
-            onClick={() => void createBlankNote()}
+            title="新建便签（当前目录）(Ctrl+N)"
+            onClick={() => void createBlankNote(currentDir)}
           >
             <Plus size={13} />
           </button>
@@ -438,6 +456,13 @@ export function RightSidebar() {
                 onClick={() => selected.nodeId && navigateTo(selected.nodeId)}
               >
                 <CornerUpRight size={13} />
+              </button>
+              <button
+                className="shrink-0 rounded-md px-1.5 py-1 text-[10px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                title="立即保存"
+                onClick={() => void handleSaveNow()}
+              >
+                保存
               </button>
               <button
                 className="shrink-0 rounded-md p-1 text-neutral-300 hover:bg-neutral-100 hover:text-red-500"

@@ -141,8 +141,8 @@ interface ChatState {
   importData: () => Promise<void>;
   /** 从消息创建便签（关联节点） */
   createNoteFromMessage: (nodeId: string) => Promise<Note | null>;
-  /** 创建空白便签 */
-  createBlankNote: () => Promise<Note | null>;
+  /** 创建空白便签（可指定目录） */
+  createBlankNote: (category?: string) => Promise<Note | null>;
   /** 便签变化版本号（便签板实时刷新） */
   noteVersion: number;
   bumpNoteVersion: () => void;
@@ -876,10 +876,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return note;
   },
 
-  createBlankNote: async () => {
+  createBlankNote: async (category) => {
     const { repos } = get();
     if (!repos) return null;
-    const note = await createNoteFile(repos, { title: "新便签", content: "" });
+    const note = await createNoteFile(repos, {
+      title: "新便签",
+      content: "",
+      category,
+    });
     if (note) {
       useUIStore.getState().setSidebar("right", true);
       get().bumpNoteVersion();

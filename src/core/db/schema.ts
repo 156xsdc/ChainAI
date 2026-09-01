@@ -6,9 +6,11 @@
 export const SCHEMA_SQL: string[] = [
   // 树（多棵树：每个树是独立的对话项目）
   `CREATE TABLE IF NOT EXISTS trees (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL DEFAULT '',
+    inherit_mode  TEXT NOT NULL DEFAULT 'count',
+    inherit_count INTEGER NOT NULL DEFAULT 5,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
 
   // 节点表：一个节点 = 用户问 + AI答

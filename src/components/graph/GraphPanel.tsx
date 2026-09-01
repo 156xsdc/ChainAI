@@ -19,6 +19,7 @@ import { useChatStore } from "../../store/chatStore";
 import { useGraphStore } from "../../store/graphStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { confirmDialog, promptDialog } from "../../store/dialogStore";
+import { CreateTreeDialog } from "../modals/CreateTreeDialog";
 import { GraphCanvas } from "./GraphCanvas";
 
 const MIN_W = 260;
@@ -35,7 +36,7 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
   const clearAllChat = useChatStore((s) => s.clearAllChat);
   const trees = useChatStore((s) => s.trees);
   const currentTreeId = useChatStore((s) => s.currentTreeId);
-  const createTree = useChatStore((s) => s.createTree);
+
   const renameTree = useChatStore((s) => s.renameTree);
   const deleteTree = useChatStore((s) => s.deleteTree);
   const switchTree = useChatStore((s) => s.switchTree);
@@ -63,15 +64,11 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
   }, [setLeftPanelWidth]);
 
   const currentTree = trees.find((t) => t.id === currentTreeId);
+  const [createTreeOpen, setCreateTreeOpen] = useState(false);
 
-  /** 新建树 */
-  const handleCreateTree = async () => {
-    const name = await promptDialog({
-      title: "新建树",
-      placeholder: "树名称（如：网站性能优化项目）",
-    });
-    if (name === null) return;
-    await createTree(name);
+  /** 新建树（含上下文策略选择） */
+  const handleCreateTree = () => {
+    setCreateTreeOpen(true);
     setTreeMenuOpen(false);
   };
 
@@ -262,6 +259,12 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
       <div
         className="absolute right-0 top-0 z-10 h-full w-1 cursor-col-resize hover:bg-neutral-300/70 active:bg-neutral-400"
         onMouseDown={startDrag}
+      />
+
+      {/* 新建树对话框（含上下文策略） */}
+      <CreateTreeDialog
+        open={createTreeOpen}
+        onClose={() => setCreateTreeOpen(false)}
       />
     </div>
   );

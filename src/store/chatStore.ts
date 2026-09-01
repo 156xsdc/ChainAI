@@ -147,8 +147,11 @@ interface ChatState {
   bumpFavVersion: () => void;
   /** 清空全部对话（节点软删除到回收站 + 清会话） */
   clearAllChat: () => Promise<void>;
-  /** 新建树 */
-  createTree: (name: string) => Promise<string>;
+  /** 新建树（可设置普通对话上下文策略：固定N条/全部/每轮全新） */
+  createTree: (
+    name: string,
+    options?: { inheritMode?: "count" | "all" | "none"; inheritCount?: number }
+  ) => Promise<string>;
   /** 重命名树 */
   renameTree: (treeId: string, name: string) => Promise<void>;
   /** 删除树（节点移入回收站） */
@@ -374,15 +377,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
+    // 解析某节点的有效继承数：分支会话优先 → 树级策略 → 全局默认
+    const resolveInheritCount = async (nid: string): Promise<number> => {
+      const sess = await treeService.getSessionForNode(nid);
+      if (sess?.inheritCount !== undefined && sess?.inheritCount !== null) {
+        return sess.inheritCount;
+      }
+      const tree = currentTreeId
+        ? await repos.trees.getById(currentTreeId)
+        : null;
+      if (tree) {
+        return tree.inheritMode === "all"
+          ? -1
+          : tree.inheritMode === "none"
+            ? 0
+            : tree.inheritCount;
+      }
+      return await repos.settings.get<number>("ai.defaultInheritCount", 5);
+    };
+
     // 上下文超限预检：超出时自动创建分支（继承最近 N 条）继续，避免发出去被模型拒绝
     if (!skipAutoBranch && currentNodeId) {
       // 按实际继承策略估算（截断到最近 N 条，而非全量路径——避免历史长时误判）
       const ctxEst = await treeService.getContextPath(currentNodeId);
-      const estSession = await treeService.getSessionForNode(currentNodeId);
-      let estCount = estSession?.inheritCount;
-      if (estCount === undefined || estCount === null) {
-        estCount = await repos.settings.get<number>("ai.defaultInheritCount", 5);
-      }
+      const estCount = await resolveInheritCount(currentNodeId);
       const estMsgs = ctxEst.map((m) => ({ content: m.content }));
       const estMsgsTruncated =
         estCount === undefined || estCount < 0 || estCount === null
@@ -417,6 +435,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return get().sendMessage(trimmed, true);
       }
     }
+
 
     let nodeId = currentNodeId;
     try {
@@ -463,13 +482,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // 构建上下文：继承模式 + 时间权重压缩
     set({ preparing: true });
-    // 沿父链找所属会话：分支/合并的继承设置对分支内后续对话持续生效
-    const session = await treeService.getSessionForNode(nodeId);
-    // 分支节点用会话继承数；普通对话用全局默认（ai.defaultInheritCount）
-    let inheritCount = session?.inheritCount;
-    if (inheritCount === undefined || inheritCount === null) {
-      inheritCount = await repos.settings.get<number>("ai.defaultInheritCount", 5);
-    }
+    // 有效继承数：分支会话优先，普通对话用树级策略（固定N条/全部/每轮全新）
+    const inheritCount = await resolveInheritCount(nodeId);
     const inheritMode =
       inheritCount < 0 ? "all" : inheritCount === 0 ? "none" : "count";
     const compressSettings = await repos.settings.get<{
@@ -848,10 +862,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
-  createTree: async (name) => {
+  createTree: async (name, options) => {
     const { repos } = get();
     if (!repos) return "";
-    const tree = await repos.trees.create(name.trim() || "新树");
+    const tree = await repos.trees.create({
+      name: name.trim() || "新树",
+      inheritMode: options?.inheritMode,
+      inheritCount: options?.inheritCount,
+    });
     // 刷新树列表（新建的树要立即出现在菜单中）
     const trees = await repos.trees.list();
     await repos.settings.set("chat.currentTreeId", tree.id);

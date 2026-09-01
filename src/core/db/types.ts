@@ -74,6 +74,9 @@ export interface SessionRow {
   is_active: number;
 }
 
+/** 树级普通对话上下文策略 */
+export type TreeInheritMode = "count" | "all" | "none";
+
 /** 应用层会话 */
 export interface Session {
   id: string;

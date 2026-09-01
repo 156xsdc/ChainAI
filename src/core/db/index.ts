@@ -101,6 +101,21 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 忽略（索引已存在等）
   }
+  // 兼容旧库：trees 表补充 inherit_mode / inherit_count 列（树级上下文策略）
+  try {
+    await db.execute(
+      `ALTER TABLE trees ADD COLUMN inherit_mode TEXT NOT NULL DEFAULT 'count'`
+    );
+  } catch {
+    // 列已存在
+  }
+  try {
+    await db.execute(
+      `ALTER TABLE trees ADD COLUMN inherit_count INTEGER NOT NULL DEFAULT 5`
+    );
+  } catch {
+    // 列已存在
+  }
   // 默认树：无树时创建；旧节点归入默认树
   const treeRows = await db.select<{ id: string }>(`SELECT id FROM trees LIMIT 1`);
   if (treeRows.length === 0) {

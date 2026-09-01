@@ -418,7 +418,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (estTokens > contextLimit) {
         const inheritN = await repos.settings.get<number>(
           "ai.defaultInheritCount",
-          10
+          5
         );
         const ok = await confirmDialog({
           title: "上下文超出限制",

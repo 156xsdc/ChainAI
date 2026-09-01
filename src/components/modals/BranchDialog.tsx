@@ -23,7 +23,7 @@ export function BranchDialog({ open, parentNodeId, onClose }: BranchDialogProps)
   const createBranch = useChatStore((s) => s.createBranch);
   const [name, setName] = useState("");
   const [mode, setMode] = useState<(typeof modes)[number]["value"]>("count");
-  const [count, setCount] = useState(10);
+  const [count, setCount] = useState(5);
   const [busy, setBusy] = useState(false);
 
   // 默认值：优先当前树的上下文策略（树策略渗透到分支），否则全局默认

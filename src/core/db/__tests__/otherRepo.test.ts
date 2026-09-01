@@ -9,6 +9,26 @@ describe("收藏/分组/便签/设置仓库", () => {
     repo = await createTestDb();
   });
 
+  it("树：上下文策略存取（模式/条数/字符串兼容）", async () => {
+    const t1 = await repo.trees.create({ name: "全部", inheritMode: "all" });
+    expect(t1.inheritMode).toBe("all");
+    expect((await repo.trees.getById(t1.id))?.inheritMode).toBe("all");
+
+    const t2 = await repo.trees.create("字符串兼容");
+    expect(t2.inheritMode).toBe("count");
+    expect((await repo.trees.getById(t2.id))?.inheritCount).toBe(5);
+
+    const t3 = await repo.trees.create({
+      name: "固定3",
+      inheritMode: "count",
+      inheritCount: 3,
+    });
+    expect((await repo.trees.getById(t3.id))?.inheritCount).toBe(3);
+
+    const t4 = await repo.trees.create({ name: "全新", inheritMode: "none" });
+    expect((await repo.trees.getById(t4.id))?.inheritMode).toBe("none");
+  });
+
   it("节点：quote 引用字段持久化（创建/更新/读取）", async () => {
     const node = await repo.nodes.createNode({
       question: "追问",

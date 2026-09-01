@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { Copy, Scissors, ClipboardPaste, ListChecks } from "lucide-react";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { useChatStore } from "../../store/chatStore";
 import { copyText } from "../../core/io/clipboard";
 
 interface MenuState {
@@ -55,6 +56,34 @@ export function TextContextMenu() {
     }
   };
 
+  /**
+   * 粘贴：execCommand("paste") 在 Chromium/WebView2 被安全策略禁用，
+   * 改用 navigator.clipboard.readText 读取并手动插入光标位置，
+   * 再触发 input 事件同步 React 受控组件。
+   */
+  const pasteText = async () => {
+    const editable = state?.editable;
+    if (!editable) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      const el = editable as HTMLTextAreaElement | HTMLInputElement;
+      const start = el.selectionStart ?? el.value.length;
+      const end = el.selectionEnd ?? el.value.length;
+      el.value = el.value.slice(0, start) + text + el.value.slice(end);
+      const pos = start + text.length;
+      el.selectionStart = el.selectionEnd = pos;
+      // 通知 React 受控组件值已变化
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch {
+      // fallback：部分环境允许 execCommand
+      const ok = document.execCommand("paste");
+      if (!ok) {
+        useChatStore.getState().setNotice("粘贴失败：无法读取剪贴板");
+      }
+    }
+    setState(null);
+  };
+
   const menuStyle: React.CSSProperties = {
     position: "fixed",
     top: Math.min(state.y, window.innerHeight - 160),
@@ -80,7 +109,7 @@ export function TextContextMenu() {
           <MenuItem
             icon={<ClipboardPaste size={12} />}
             label="粘贴"
-            onClick={() => exec("paste")}
+            onClick={() => void pasteText()}
           />
         </>
       )}

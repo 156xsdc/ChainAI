@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { Copy, Scissors, ClipboardPaste, ListChecks } from "lucide-react";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { copyText } from "../../core/io/clipboard";
 
 interface MenuState {
   x: number;
@@ -49,7 +50,7 @@ export function TextContextMenu() {
     if (state.editable) {
       exec("copy");
     } else {
-      void navigator.clipboard.writeText(window.getSelection()?.toString() ?? "");
+      void copyText(window.getSelection()?.toString() ?? "");
       setState(null);
     }
   };

@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { Copy, Star, StickyNote } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
 import { useUIStore } from "../../store/uiStore";
+import { copyText } from "../../core/io/clipboard";
 
 interface ContextMenuProps {
   x: number;
@@ -35,7 +36,10 @@ export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
       const text = node.question
         ? `**用户：**${node.question}\n\n${node.answer ? `**AI：**${node.answer}` : ""}`
         : node.answer;
-      await navigator.clipboard.writeText(text);
+      const ok = await copyText(text);
+      useChatStore.getState().setNotice(
+        ok ? "📋 已复制" : "复制失败：剪贴板不可用"
+      );
     }
     onClose();
   };
@@ -58,7 +62,12 @@ export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
         icon={<Star size={13} />}
         label="收藏 / 取消收藏"
         onClick={async () => {
+          const node = await repos?.nodes.getNode(nodeId);
+          const wasFav = node?.isFavorited;
           await toggleFavorite(nodeId);
+          useChatStore.getState().setNotice(
+            wasFav ? "已取消收藏" : "⭐ 已收藏"
+          );
           onClose();
         }}
       />

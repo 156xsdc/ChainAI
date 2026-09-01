@@ -82,8 +82,12 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
         <button
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
           onClick={() => {
-            void toggleFavorite(nodeId);
-            onClose();
+            void (async () => {
+              const wasFav = node?.isFavorited;
+              await toggleFavorite(nodeId);
+              setNotice(wasFav ? "已取消收藏" : "⭐ 已收藏");
+              onClose();
+            })();
           }}
         >
           <Bookmark size={13} className="text-neutral-400" />
@@ -92,8 +96,12 @@ export function GraphNodeMenu({ x, y, nodeId, onClose }: GraphNodeMenuProps) {
         <button
           className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-neutral-700 hover:bg-neutral-100"
           onClick={() => {
-            void toggleKeep(nodeId);
-            onClose();
+            void (async () => {
+              const wasKept = node?.isKept;
+              await toggleKeep(nodeId);
+              setNotice(wasKept ? "已取消保留" : "📌 已保留（防清理）");
+              onClose();
+            })();
           }}
         >
           <Pin size={13} className="text-neutral-400" />

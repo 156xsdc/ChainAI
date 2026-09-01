@@ -8,6 +8,8 @@ import {
   ArrowLeft,
   ChevronsRight,
   CornerUpRight,
+  Eye,
+  FileCode2,
   Folder,
   Plus,
   Search,
@@ -25,6 +27,7 @@ import {
   writeNoteContent,
 } from "../../core/notes/noteService";
 import { buildTreeFromPaths, type DirNode } from "../../core/notes/dirTree";
+import { Markdown } from "../chat/Markdown";
 import type { Note } from "../../core/db";
 
 const MIN_W = 220;
@@ -43,6 +46,8 @@ export function RightSidebar() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** 浏览态：当前查看目录（"" = 根） */
   const [currentDir, setCurrentDir] = useState("");
+  /** 编辑/阅读视图切换 */
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#fafafa");
@@ -458,6 +463,15 @@ export function RightSidebar() {
                 <CornerUpRight size={13} />
               </button>
               <button
+                className="shrink-0 rounded-md p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                title={viewMode === "edit" ? "预览渲染效果" : "返回编辑"}
+                onClick={() =>
+                  setViewMode((v) => (v === "edit" ? "preview" : "edit"))
+                }
+              >
+                {viewMode === "edit" ? <Eye size={13} /> : <FileCode2 size={13} />}
+              </button>
+              <button
                 className="shrink-0 rounded-md px-1.5 py-1 text-[10px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                 title="立即保存"
                 onClick={() => void handleSaveNow()}
@@ -509,15 +523,28 @@ export function RightSidebar() {
               />
             </div>
 
-            <textarea
-              value={content}
-              onChange={(e) => handleContentChange(e.target.value)}
-              className="min-h-0 flex-1 resize-none bg-transparent px-1 py-1 font-mono text-[12px] leading-relaxed text-neutral-700 outline-none"
-              placeholder="支持 Markdown 格式..."
-              spellCheck={false}
-            />
+            {viewMode === "preview" ? (
+              /* 阅读模式：渲染后的 Markdown */
+              <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
+                {content.trim() ? (
+                  <Markdown content={content} />
+                ) : (
+                  <div className="py-6 text-center text-[11px] text-neutral-300">
+                    （空白便签）
+                  </div>
+                )}
+              </div>
+            ) : (
+              <textarea
+                value={content}
+                onChange={(e) => handleContentChange(e.target.value)}
+                className="min-h-0 flex-1 resize-none bg-transparent px-1 py-1 font-mono text-[12px] leading-relaxed text-neutral-700 outline-none"
+                placeholder="支持 Markdown 格式..."
+                spellCheck={false}
+              />
+            )}
             <div className="px-1 py-1 text-[9px] text-neutral-300">
-              {selected.filePath}
+              {viewMode === "preview" ? "预览模式" : selected.filePath}
             </div>
           </div>
         ) : (

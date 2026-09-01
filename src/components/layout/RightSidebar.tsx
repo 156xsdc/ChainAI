@@ -273,12 +273,18 @@ export function RightSidebar() {
     });
 
   // 自动保存（防抖）
-  const scheduleSave = (note: Note, field: Partial<Pick<Note, "title" | "color" | "tags">> = {}) => {
+  // ⚠️ contentToSave 必须显式传入：setContent 异步，闭包里的 content 是旧值，
+  // 直接读闭包会导致最后一次修改（粘贴/末字符）未写入文件
+  const scheduleSave = (
+    note: Note,
+    field: Partial<Pick<Note, "title" | "color" | "tags">> = {},
+    contentToSave?: string
+  ) => {
     if (!repos) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       void repos.notes.update(note.id, field);
-      void writeNoteContent(repos, note, content);
+      void writeNoteContent(repos, note, contentToSave ?? content);
       void loadNotes();
     }, 600);
   };
@@ -286,28 +292,32 @@ export function RightSidebar() {
   const handleContentChange = (text: string) => {
     setContent(text);
     const note = notes.find((n) => n.id === selectedId);
-    if (note) scheduleSave(note);
+    if (note) scheduleSave(note, {}, text); // 显式传新内容
   };
 
   const handleTitleChange = (t: string) => {
     setTitle(t);
     const note = notes.find((n) => n.id === selectedId);
-    if (note) scheduleSave(note, { title: t });
+    if (note) scheduleSave(note, { title: t }, content); // content 未变，传当前值
   };
 
   const handleColorChange = (c: string) => {
     setColor(c);
     const note = notes.find((n) => n.id === selectedId);
-    if (note) scheduleSave(note, { color: c });
+    if (note) scheduleSave(note, { color: c }, content);
   };
 
   const handleTagsChange = (t: string) => {
     setTagsText(t);
     const note = notes.find((n) => n.id === selectedId);
     if (note) {
-      scheduleSave(note, {
-        tags: t.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
-      });
+      scheduleSave(
+        note,
+        {
+          tags: t.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+        },
+        content
+      );
     }
   };
 

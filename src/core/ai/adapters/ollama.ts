@@ -13,7 +13,13 @@ import type {
 import { BaseAdapter, trimSlash } from "./base";
 
 interface OllamaLine {
-  message?: { role?: string; content?: string };
+  message?: {
+    role?: string;
+    content?: string;
+    reasoning?: string;
+    reasoning_content?: string;
+    thinking?: string;
+  };
   done?: boolean;
   prompt_eval_count?: number;
   eval_count?: number;
@@ -62,6 +68,14 @@ export class OllamaAdapter extends BaseAdapter {
       const json = parseJSONSafe<OllamaLine>(line);
       if (!json) return;
 
+      // 思考过程（reasoning_content / reasoning / thinking 兼容）
+      const reasoning =
+        json.message?.reasoning ??
+        json.message?.reasoning_content ??
+        json.message?.thinking;
+      if (reasoning) {
+        queue.push({ reasoning, done: false });
+      }
       if (json.message?.content) {
         queue.push({ delta: json.message.content, done: false });
       }

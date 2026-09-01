@@ -51,6 +51,8 @@ export type ChatStreamItem =
       content: string;
       /** 引用的 AI 回答片段（用户消息下展示） */
       quote?: string;
+      /** 模型思考过程（AI 消息折叠展示） */
+      reasoning?: string;
       /** 是否已收藏（用于消息操作条显示状态） */
       isFavorited?: boolean;
       /** 是否已保留标记 */
@@ -96,6 +98,8 @@ interface ChatState {
   preparing: boolean;
   /** nodeId -> 流式生成的 AI 回答（覆盖 DB 中的 answer） */
   streamingBuffer: Record<string, string>;
+  /** nodeId -> 流式生成的思考过程 */
+  streamingReasoning: Record<string, string>;
   /** 当前是否有父节点（↑上级按钮可用性） */
   hasParent: boolean;
 
@@ -192,6 +196,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   streaming: false,
   preparing: false,
   streamingBuffer: {},
+  streamingReasoning: {},
   hasParent: false,
 
   init: async () => {
@@ -304,6 +309,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           content: streamed ?? node.answer,
           isFavorited: node.isFavorited,
           isKept: node.isKept,
+          reasoning: node.reasoning || undefined,
         });
       }
       // 分叉点：该节点有多个子节点时显示分支提示线
@@ -581,11 +587,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
 
     let answer = "";
+    let reasoning = "";
     try {
       for await (const chunk of providerManager.chat({
         messages,
         signal: controller.signal,
       })) {
+        if (chunk.reasoning) {
+          reasoning += chunk.reasoning;
+          // 实时显示思考过程（节流，不经过打字机）
+          const t = Date.now();
+          if (t - lastRender >= 80) {
+            lastRender = t;
+            set((s) => ({
+              streamingReasoning: {
+                ...s.streamingReasoning,
+                [nodeId]: reasoning,
+              },
+            }));
+          }
+        }
         if (chunk.delta) {
           answer += chunk.delta;
           if (typewriter) typewriter.feed(chunk.delta);
@@ -623,14 +644,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
           await repos.nodes.updateNode(nodeId, {
             answer: finalAnswer,
             answerVersion: 1,
+            reasoning,
           });
         } else {
-          await repos.nodes.updateNode(nodeId, { answer: finalAnswer });
+          await repos.nodes.updateNode(nodeId, {
+            answer: finalAnswer,
+            reasoning,
+          });
         }
         set((s) => {
           const buffer = { ...s.streamingBuffer };
           delete buffer[nodeId];
-          return { streamingBuffer: buffer };
+          const reason = { ...s.streamingReasoning };
+          delete reason[nodeId];
+          return { streamingBuffer: buffer, streamingReasoning: reason };
         });
       }
       set({ streaming: false });
@@ -1006,6 +1033,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 立即清空旧内容显示（避免旧回答一直显示到新内容生成完）
     set((s) => ({
       streamingBuffer: { ...s.streamingBuffer, [nodeId]: "" },
+      streamingReasoning: { ...s.streamingReasoning, [nodeId]: "" },
     }));
     let answer = "";
     let lastRender = 0;
@@ -1017,11 +1045,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingBuffer: { ...s.streamingBuffer, [nodeId]: text },
       }));
     };
+    let reasoning = "";
     try {
       for await (const chunk of providerManager.chat({
         messages,
         signal: controller.signal,
       })) {
+        if (chunk.reasoning) {
+          reasoning += chunk.reasoning;
+          const t = Date.now();
+          if (t - lastRender >= 80) {
+            lastRender = t;
+            set((s) => ({
+              streamingReasoning: {
+                ...s.streamingReasoning,
+                [nodeId]: reasoning,
+              },
+            }));
+          }
+        }
         if (chunk.delta) {
           answer += chunk.delta;
           updateBuffer(answer);
@@ -1042,12 +1084,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         await repos.nodes.updateNode(nodeId, {
           answer,
           answerVersion: newVersion,
+          reasoning,
         });
       }
       set((s) => {
         const b = { ...s.streamingBuffer };
         delete b[nodeId];
-        return { streamingBuffer: b };
+        const r = { ...s.streamingReasoning };
+        delete r[nodeId];
+        return { streamingBuffer: b, streamingReasoning: r };
       });
       set({ streaming: false });
       await get().refreshPath();

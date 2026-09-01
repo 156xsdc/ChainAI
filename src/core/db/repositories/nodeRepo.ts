@@ -22,6 +22,8 @@ export interface CreateNodeInput {
   treeId?: string | null;
   /** 引用的 AI 回答片段 */
   quote?: string;
+  /** 模型思考过程 */
+  reasoning?: string;
 }
 
 export interface EdgeWithParent extends TreeEdge {
@@ -45,8 +47,8 @@ export class NodeRepository {
     const id = newId();
     const ts = now();
     await this.db.execute(
-      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, quote, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?)`,
+      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, quote, reasoning, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?)`,
       [
         id,
         input.treeId ?? null,
@@ -56,6 +58,7 @@ export class NodeRepository {
         input.summary ?? "",
         input.color ?? "#333333",
         input.quote ?? "",
+        input.reasoning ?? "",
         ts,
         ts,
       ]
@@ -87,6 +90,7 @@ export class NodeRepository {
       isFavorited?: boolean;
       answerVersion?: number;
       quote?: string;
+      reasoning?: string;
     }
   ): Promise<TreeNode | null> {
     const sets: string[] = [];
@@ -127,6 +131,10 @@ export class NodeRepository {
     if (patch.quote !== undefined) {
       sets.push("quote = ?");
       params.push(patch.quote);
+    }
+    if (patch.reasoning !== undefined) {
+      sets.push("reasoning = ?");
+      params.push(patch.reasoning);
     }
 
     if (sets.length === 0) return this.getNode(id);

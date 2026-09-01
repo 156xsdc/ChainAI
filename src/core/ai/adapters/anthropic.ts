@@ -15,7 +15,7 @@ import { BaseAdapter, trimSlash } from "./base";
 
 interface AnthropicSSEPayload {
   type?: string;
-  delta?: { type?: string; text?: string };
+  delta?: { type?: string; text?: string; thinking?: string };
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
@@ -102,8 +102,12 @@ export class AnthropicAdapter extends BaseAdapter {
       const json = parseJSONSafe<AnthropicSSEPayload>(ev.data);
       if (!json) return;
 
-      if (json.type === "content_block_delta" && json.delta?.type === "text_delta") {
-        if (json.delta.text) queue.push({ delta: json.delta.text, done: false });
+      if (json.type === "content_block_delta" && json.delta) {
+        if (json.delta.type === "text_delta" && json.delta.text) {
+          queue.push({ delta: json.delta.text, done: false });
+        } else if (json.delta.type === "thinking_delta" && json.delta.thinking) {
+          queue.push({ reasoning: json.delta.thinking, done: false });
+        }
       } else if (json.type === "message_delta" && json.usage) {
         usage = {
           promptTokens: json.usage.input_tokens,

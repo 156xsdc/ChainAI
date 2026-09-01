@@ -38,6 +38,7 @@ export function rowToNode(row: NodeRow): TreeNode {
     isActive: row.is_active === 1,
     answerVersion: row.answer_version ?? 1,
     quote: row.quote ?? "",
+    reasoning: row.reasoning ?? "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

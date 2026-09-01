@@ -4,6 +4,7 @@
  */
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
+  Brain,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -31,8 +32,11 @@ export const MessageItem = memo(function MessageItem({
   const toggleFavorite = useChatStore((s) => s.toggleFavorite);
   const setNotice = useChatStore((s) => s.setNotice);
   const setQuote = useChatStore((s) => s.setQuote);
+  const streamingReasoning = useChatStore((s) => s.streamingReasoning);
   const regenerate = useChatStore((s) => s.regenerate);
   const switchAnswer = useChatStore((s) => s.switchAnswer);
+  // 思考过程展开态（默认折叠）
+  const [reasoningOpen, setReasoningOpen] = useState(false);
 
   // 版本信息（当前版本号 + 总数），用于切换箭头
   const [verInfo, setVerInfo] = useState<{ current: number; total: number } | null>(null);
@@ -161,6 +165,32 @@ export const MessageItem = memo(function MessageItem({
       onContextMenu={(e) => onContextMenu(e, item.nodeId)}
       onMouseUp={handleMouseUp}
     >
+      {/* 思考过程（默认折叠；流式生成中自动展开） */}
+      {(() => {
+        const reasoningText = isStreaming
+          ? streamingReasoning[item.nodeId]
+          : item.reasoning;
+        if (!reasoningText) return null;
+        const open = reasoningOpen || (isStreaming && !!streamingReasoning[item.nodeId]);
+        return (
+          <div className="mb-2 overflow-hidden rounded-lg border border-neutral-100 bg-neutral-50">
+            <button
+              className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-neutral-400 hover:bg-neutral-100/60"
+              onClick={() => setReasoningOpen((v) => !v)}
+            >
+              <Brain size={12} className="shrink-0" />
+              <span className="shrink-0">思考过程</span>
+              <span className="ml-auto shrink-0">{open ? "▾ 收起" : "▸ 展开"}</span>
+            </button>
+            {open && (
+              <div className="max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-neutral-100 px-3 py-2 text-[11.5px] leading-relaxed text-neutral-500 select-text">
+                {reasoningText}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {isStreaming ? (
         // 流式期间用纯文本渲染（省 CPU），结束后统一渲染 Markdown
         <div className="whitespace-pre-wrap text-[13.5px] leading-7 text-neutral-800">

@@ -19,6 +19,7 @@ function node(id: string, createdAt = id): TreeNode {
     isFavorited: false,
     isActive: true,
     quote: "",
+    reasoning: "",
     createdAt,
     updatedAt: createdAt,
   };

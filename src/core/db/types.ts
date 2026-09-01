@@ -21,6 +21,8 @@ export interface NodeRow {
   answer_version: number;
   /** 用户引用的 AI 回答片段（随问题持久化显示） */
   quote: string;
+  /** 模型思考过程（DeepSeek-R1 / o系列 等） */
+  reasoning: string;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +43,8 @@ export interface TreeNode {
   isActive: boolean;
   /** 引用的 AI 回答片段（空串 = 无引用） */
   quote: string;
+  /** 模型思考过程（空串 = 无思考） */
+  reasoning: string;
   createdAt: string;
   updatedAt: string;
 }

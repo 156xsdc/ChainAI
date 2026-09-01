@@ -199,7 +199,7 @@ export function FavoritesSection() {
   /** 批量导出：每个收藏单独一个 .md 文件（仅 AI 回答），自动建文件夹批量写入 */
   const handleBatchExport = async () => {
     if (selectedFavs.size === 0) return;
-    const targets = favs.filter((f) => selectedFavs.has(f.id) && f.node);
+    const targets = favs.filter((f) => selectedFavs.has(f.id));
     // 选父目录 → 自动创建「收藏导出-时间」子文件夹
     const dir = await chooseDirectory();
     if (!dir) return;
@@ -213,9 +213,14 @@ export function FavoritesSection() {
     const { join } = await import("@tauri-apps/api/path");
     const usedNames = new Set<string>();
     let exported = 0;
+    let skipped = 0;
     for (const f of targets) {
-      const n = f.node!;
-      if (!n.answer.trim()) continue; // 无回答跳过
+      const n = f.node;
+      // 无回答 / 节点已删除的收藏无法导出——计数并跳过（明确提示）
+      if (!n || !n.answer.trim()) {
+        skipped++;
+        continue;
+      }
       // 文件名：问题前 15 字（去非法字符），重名加序号
       const base =
         (n.question || "收藏").slice(0, 15).replace(/[\\/:*?"<>|]/g, "") ||
@@ -239,9 +244,15 @@ export function FavoritesSection() {
       }
     }
     if (exported > 0) {
-      setNotice(`✅ 已导出 ${exported} 个回答到：${dir}\\${folderName}`);
+      setNotice(
+        `✅ 已导出 ${exported} 个回答到：${dir}\\${folderName}${
+          skipped > 0 ? `（跳过 ${skipped} 项：无回答或节点已删除）` : ""
+        }`
+      );
+    } else if (skipped > 0) {
+      setNotice(`没有可导出的内容（选中的 ${skipped} 项均无回答或节点已删除）`);
     } else {
-      setNotice("没有可导出的内容（选中的收藏回答为空）");
+      setNotice("没有可导出的内容");
     }
     setBatchMode(false);
     void load();

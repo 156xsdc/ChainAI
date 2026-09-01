@@ -597,6 +597,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (ce.code !== "aborted") {
         set({ uiError: ce.message });
       }
+      // 上下文超限：自动学习模型窗口（下次预检在超限前拦截，无需手动配置）
+      if (ce.code === "context_exceeded") {
+        const m = ce.message.match(/(\d+)\s*tokens?/);
+        if (m) {
+          const learned = Math.floor(Number(m[1]) * 0.8);
+          await repos.settings
+            .set("ai.contextLimit", Math.max(1000, learned))
+            .catch(() => {});
+        }
+      }
     } finally {
       streamController = null;
       set({ preparing: false });

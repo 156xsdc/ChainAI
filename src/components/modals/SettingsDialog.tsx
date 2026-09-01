@@ -58,8 +58,6 @@ export function SettingsDialog({
   const [cleanupDays, setCleanupDays] = useState(30);
   const [backupEnabled, setBackupEnabled] = useState(true);
   const [backupInterval, setBackupInterval] = useState(3);
-  const [defaultInherit, setDefaultInherit] = useState(5);
-  const [contextLimit, setContextLimit] = useState(8000);
   const [notifyDuration, setNotifyDuration] = useState(6);
   const [notifySuccess, setNotifySuccess] = useState(true);
   const [notifyInfo, setNotifyInfo] = useState(true);
@@ -93,14 +91,6 @@ export function SettingsDialog({
           setBackupEnabled(s.enabled !== false);
           setBackupInterval(s.intervalDays ?? 3);
         });
-      void useChatStore
-        .getState()
-        .repos?.settings.get<number>("ai.defaultInheritCount", 5)
-        .then((v) => setDefaultInherit(v));
-      void useChatStore
-        .getState()
-        .repos?.settings.get<number>("ai.contextLimit", 8000)
-        .then((v) => setContextLimit(v));
       // 加载通知设置
       void useChatStore
         .getState()
@@ -350,57 +340,6 @@ export function SettingsDialog({
               title={`便签以独立 Markdown 文件存储于此目录；在便签板中设置"分类"可创建子目录。修改路径后，新便签写入新位置（已有便签文件不自动迁移）。`}
             >
               便签以独立 Markdown 文件存储于此目录，分类可创建子目录；修改路径后新便签写入新位置
-            </div>
-          </div>
-        </div>
-
-        {/* 上下文设置 */}
-        <div className="rounded-xl border border-neutral-200 p-3.5">
-          <div className="mb-2 text-xs text-neutral-500">上下文设置</div>
-          <div className="flex flex-col gap-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate text-xs text-neutral-600">
-                分支默认继承消息数
-              </span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                className="w-20 shrink-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-xs outline-none focus:border-neutral-400"
-                value={defaultInherit}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setDefaultInherit(v);
-                  void useChatStore
-                    .getState()
-                    .repos?.settings.set("ai.defaultInheritCount", v);
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="min-w-0 truncate text-xs text-neutral-600">
-                上下文上限（tokens）
-              </span>
-              <input
-                type="number"
-                min={1000}
-                step={500}
-                className="w-20 shrink-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-xs outline-none focus:border-neutral-400"
-                value={contextLimit}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setContextLimit(v);
-                  void useChatStore
-                    .getState()
-                    .repos?.settings.set("ai.contextLimit", v);
-                }}
-              />
-            </div>
-            <div
-              className="truncate text-[10px] text-neutral-400"
-              title="模型能接受的最大上下文（如 Ollama 默认 4096）。超过时发送前自动创建新分支（继承最近N条）继续，避免请求被模型拒绝"
-            >
-              超过时自动创建新分支继续；建议填模型实际窗口（如 Ollama 4096）
             </div>
           </div>
         </div>

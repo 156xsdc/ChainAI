@@ -196,13 +196,19 @@ export function FavoritesSection() {
     void load();
   };
 
-  /** 批量导出：每个收藏单独一个 .md 文件（仅 AI 回答），选目录批量写入 */
+  /** 批量导出：每个收藏单独一个 .md 文件（仅 AI 回答），自动建文件夹批量写入 */
   const handleBatchExport = async () => {
     if (selectedFavs.size === 0) return;
     const targets = favs.filter((f) => selectedFavs.has(f.id) && f.node);
-    // 选导出目录
+    // 选父目录 → 自动创建「收藏导出-时间」子文件夹
     const dir = await chooseDirectory();
     if (!dir) return;
+    const stamp = new Date()
+      .toISOString()
+      .slice(0, 16)
+      .replace("T", "-")
+      .replace(":", "");
+    const folderName = `收藏导出-${stamp}`;
     const { invoke } = await import("@tauri-apps/api/core");
     const { join } = await import("@tauri-apps/api/path");
     const usedNames = new Set<string>();
@@ -222,8 +228,9 @@ export function FavoritesSection() {
       }
       usedNames.add(name);
       try {
+        // write_text_file 会自动创建父目录（含子文件夹）
         await invoke("write_text_file", {
-          path: await join(dir, name),
+          path: await join(dir, folderName, name),
           content: n.answer.trim() + "\n",
         });
         exported++;
@@ -232,7 +239,7 @@ export function FavoritesSection() {
       }
     }
     if (exported > 0) {
-      setNotice(`✅ 已导出 ${exported} 个回答到：${dir}`);
+      setNotice(`✅ 已导出 ${exported} 个回答到：${dir}\\${folderName}`);
     } else {
       setNotice("没有可导出的内容（选中的收藏回答为空）");
     }

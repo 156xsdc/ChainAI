@@ -632,16 +632,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createBranch: async (parentNodeId, params) => {
     const { repos, treeService, currentTreeId } = get();
     if (!treeService) return "";
-    // count 模式未指定条数时用全局默认（分支提示线快速创建与对话框一致）
     let inheritCount = params?.inheritCount;
+    let inheritMode = params?.inheritMode;
+    // 未指定策略 → 继承当前树的上下文策略（树策略渗透到分支内对话）
+    if (inheritMode === undefined && inheritCount === undefined) {
+      const tree = currentTreeId
+        ? await repos?.trees.getById(currentTreeId)
+        : null;
+      if (tree) {
+        inheritMode = tree.inheritMode;
+        inheritCount =
+          tree.inheritMode === "count"
+            ? tree.inheritCount
+            : tree.inheritMode === "none"
+              ? 0
+              : -1;
+      }
+    }
+    // count 模式仍未指定条数时用全局默认
     if (
-      (params?.inheritMode === undefined || params?.inheritMode === "count") &&
+      (inheritMode === undefined || inheritMode === "count") &&
       (inheritCount === undefined || inheritCount === null)
     ) {
       inheritCount = await repos?.settings.get<number>("ai.defaultInheritCount", 5);
     }
     const { node } = await treeService.createBranch(parentNodeId, {
       ...params,
+      inheritMode,
       inheritCount,
       treeId: currentTreeId,
     });

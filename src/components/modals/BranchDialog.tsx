@@ -26,13 +26,31 @@ export function BranchDialog({ open, parentNodeId, onClose }: BranchDialogProps)
   const [count, setCount] = useState(10);
   const [busy, setBusy] = useState(false);
 
-  // 读取全局默认继承数量
+  // 默认值：优先当前树的上下文策略（树策略渗透到分支），否则全局默认
   useEffect(() => {
     if (!open) return;
-    void useChatStore
-      .getState()
-      .repos?.settings.get<number>("ai.defaultInheritCount", 5)
-      .then((v) => setCount(v));
+    void (async () => {
+      const cs = useChatStore.getState();
+      if (!cs.repos) return;
+      const tree = cs.currentTreeId
+        ? await cs.repos.trees.getById(cs.currentTreeId)
+        : null;
+      if (tree) {
+        if (tree.inheritMode === "all") setMode("all");
+        else if (tree.inheritMode === "none") setMode("none");
+        else {
+          setMode("count");
+          setCount(tree.inheritCount);
+        }
+      } else {
+        const v = await cs.repos.settings.get<number>(
+          "ai.defaultInheritCount",
+          5
+        );
+        setMode("count");
+        setCount(v);
+      }
+    })();
   }, [open]);
 
   const handleConfirm = async () => {

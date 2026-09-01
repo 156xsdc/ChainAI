@@ -378,7 +378,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!skipAutoBranch && currentNodeId) {
       // 按实际继承策略估算（截断到最近 N 条，而非全量路径——避免历史长时误判）
       const ctxEst = await treeService.getContextPath(currentNodeId);
-      const estSession = await repos.sessions.getByStartNode(currentNodeId);
+      const estSession = await treeService.getSessionForNode(currentNodeId);
       let estCount = estSession?.inheritCount;
       if (estCount === undefined || estCount === null) {
         estCount = await repos.settings.get<number>("ai.defaultInheritCount", 5);
@@ -463,7 +463,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // 构建上下文：继承模式 + 时间权重压缩
     set({ preparing: true });
-    const session = await repos.sessions.getByStartNode(nodeId);
+    // 沿父链找所属会话：分支/合并的继承设置对分支内后续对话持续生效
+    const session = await treeService.getSessionForNode(nodeId);
     // 分支节点用会话继承数；普通对话用全局默认（ai.defaultInheritCount）
     let inheritCount = session?.inheritCount;
     if (inheritCount === undefined || inheritCount === null) {

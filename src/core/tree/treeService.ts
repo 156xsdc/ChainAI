@@ -45,6 +45,25 @@ export interface BranchResult {
 }
 
 export class TreeService {
+  /**
+   * 查找节点所属的会话：沿主父链向上，找最近的会话起点节点。
+   * 分支/合并的继承设置对该分支内的所有后续对话持续生效
+   * （而非只在起点节点生效）。
+   */
+  async getSessionForNode(nodeId: string): Promise<Session | null> {
+    let cur: string | null = nodeId;
+    const visited = new Set<string>();
+    while (cur && !visited.has(cur)) {
+      visited.add(cur);
+      const sess = await this.sessions.getByStartNode(cur);
+      if (sess) return sess;
+      const parents = await this.nodes.getParents(cur);
+      if (parents.length === 0) break;
+      cur = parents[0].id;
+    }
+    return null;
+  }
+
   constructor(
     /** 保留兼容签名（事务已改为顺序执行+补偿，当前不使用） */
     _db: SqlBackend,

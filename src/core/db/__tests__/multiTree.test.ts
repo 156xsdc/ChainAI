@@ -162,6 +162,28 @@ describe("多树场景", () => {
     expect(contents.length).toBeGreaterThan(0);
   });
 
+  it("分支继承设置沿父链持续生效（子节点仍用分支会话的继承数）", async () => {
+    const repos = await createTestDb();
+    const service = new TreeService(repos.backend, repos.nodes, repos.sessions);
+
+    const root = await repos.nodes.createNode({ question: "根" });
+    // 全部继承分支（inheritCount = -1）
+    const { node: branch } = await service.createBranch(root.id, {
+      inheritMode: "all",
+      inheritCount: -1,
+    });
+    // 分支内继续对话
+    const child = await service.addChild(branch.id, { question: "子" });
+
+    // 分支起点的子节点应仍能找到该分支会话（全部继承）
+    const sess = await service.getSessionForNode(child.node.id);
+    expect(sess?.startNodeId).toBe(branch.id);
+    expect(sess?.inheritCount).toBe(-1);
+
+    // 分支外（根）无会话
+    expect(await service.getSessionForNode(root.id)).toBeNull();
+  });
+
   it("getAncestors 返回合并节点的所有父链祖先（多父展开）", async () => {
     const repos = await createTestDb();
     const service = new TreeService(repos.backend, repos.nodes, repos.sessions);

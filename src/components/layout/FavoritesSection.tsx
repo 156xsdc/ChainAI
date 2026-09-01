@@ -19,7 +19,7 @@ import { useChatStore } from "../../store/chatStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { confirmDialog, promptDialog } from "../../store/dialogStore";
 import { ColorDialog } from "../common/ColorDialog";
-import { saveTextFile } from "../../core/io/files";
+import { chooseDirectory } from "../../core/io/files";
 import type { Favorite, FavoriteGroup, TreeNode } from "../../core/db";
 
 interface FavItem extends Favorite {
@@ -196,29 +196,46 @@ export function FavoritesSection() {
     void load();
   };
 
-  /** 批量导出：选中的收藏导出为 Markdown */
+  /** 批量导出：每个收藏单独一个 .md 文件（仅 AI 回答），选目录批量写入 */
   const handleBatchExport = async () => {
     if (selectedFavs.size === 0) return;
     const targets = favs.filter((f) => selectedFavs.has(f.id) && f.node);
-    const lines: string[] = [];
+    // 选导出目录
+    const dir = await chooseDirectory();
+    if (!dir) return;
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { join } = await import("@tauri-apps/api/path");
+    const usedNames = new Set<string>();
+    let exported = 0;
     for (const f of targets) {
       const n = f.node!;
-      lines.push(`## ${n.question || "（无问题）"}`);
-      if (n.answer) {
-        lines.push("");
-        lines.push(n.answer.trim());
+      if (!n.answer.trim()) continue; // 无回答跳过
+      // 文件名：问题前 15 字（去非法字符），重名加序号
+      const base =
+        (n.question || "收藏").slice(0, 15).replace(/[\\/:*?"<>|]/g, "") ||
+        "收藏";
+      let name = `${base}.md`;
+      let seq = 2;
+      while (usedNames.has(name)) {
+        name = `${base}(${seq}).md`;
+        seq++;
       }
-      lines.push("");
+      usedNames.add(name);
+      try {
+        await invoke("write_text_file", {
+          path: await join(dir, name),
+          content: n.answer.trim() + "\n",
+        });
+        exported++;
+      } catch {
+        // 单条失败继续
+      }
     }
-    const md =
-      `# 收藏导出 ${new Date().toISOString().slice(0, 10)}\n\n` +
-      lines.join("\n").trim() +
-      "\n";
-    const name = `tongtu-favorites-${new Date().toISOString().slice(0, 10)}.md`;
-    const path = await saveTextFile(name, md, [
-      { name: "Markdown", extensions: ["md"] },
-    ]);
-    if (path) setNotice(`✅ 已导出 ${targets.length} 个收藏：${path}`);
+    if (exported > 0) {
+      setNotice(`✅ 已导出 ${exported} 个回答到：${dir}`);
+    } else {
+      setNotice("没有可导出的内容（选中的收藏回答为空）");
+    }
     setBatchMode(false);
     void load();
   };

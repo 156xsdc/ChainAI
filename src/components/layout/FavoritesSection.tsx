@@ -212,9 +212,20 @@ export function FavoritesSection() {
     const { invoke } = await import("@tauri-apps/api/core");
     const { join } = await import("@tauri-apps/api/path");
     const usedNames = new Set<string>();
+    /** 文件名清洗：去非法/控制字符、结尾点空格、Windows 保留名 */
+    const cleanBase = (s: string): string => {
+      let b = s
+        .replace(/[\\/:*?"<>|\x00-\x1f]/g, "")
+        .replace(/[. ]+$/g, "")
+        .trim();
+      // 保留设备名（CON/PRN/AUX/NUL/COM1-9/LPT1-9）加下划线前缀
+      if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(b)) b = `_${b}`;
+      return b || "收藏";
+    };
     let exported = 0;
     let skipped = 0;
     let failed = 0;
+    let failedNames: string[] = [];
     for (const f of targets) {
       const n = f.node;
       // 节点已删除 / 无回答的收藏无法导出——计数并跳过（明确提示）
@@ -226,10 +237,8 @@ export function FavoritesSection() {
         skipped++;
         continue;
       }
-      // 文件名：问题前 15 字（去非法字符），重名加序号
-      const base =
-        (n.question || "收藏").slice(0, 15).replace(/[\\/:*?"<>|]/g, "") ||
-        "收藏";
+      // 文件名：问题前 15 字（清洗），重名加序号
+      const base = cleanBase(n.question || "收藏").slice(0, 15);
       let name = `${base}.md`;
       let seq = 2;
       while (usedNames.has(name)) {
@@ -246,12 +255,17 @@ export function FavoritesSection() {
         exported++;
       } catch (e) {
         failed++;
+        if (failedNames.length < 3) failedNames.push(name);
         console.error("导出失败", name, e);
       }
     }
     const extra =
       (skipped > 0 ? `；跳过 ${skipped} 项（无回答或节点已删除）` : "") +
-      (failed > 0 ? `；${failed} 项写入失败` : "");
+      (failed > 0
+        ? `；${failed} 项写入失败${
+            failedNames.length > 0 ? `（如：${failedNames.join("、")}）` : ""
+          }`
+        : "");
     if (exported > 0) {
       setNotice(`✅ 已导出 ${exported} 个回答到：${dir}\\${folderName}${extra}`);
     } else if (skipped > 0 || failed > 0) {

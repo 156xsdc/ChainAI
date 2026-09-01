@@ -165,13 +165,13 @@ export const MessageItem = memo(function MessageItem({
       onContextMenu={(e) => onContextMenu(e, item.nodeId)}
       onMouseUp={handleMouseUp}
     >
-      {/* 思考过程（默认折叠；流式生成中自动展开） */}
+      {/* 思考过程（默认折叠，展开/收起完全由用户控制） */}
       {(() => {
         const reasoningText = isStreaming
-          ? streamingReasoning[item.nodeId]
+          ? (streamingReasoning[item.nodeId] ?? item.reasoning)
           : item.reasoning;
         if (!reasoningText) return null;
-        const open = reasoningOpen || (isStreaming && !!streamingReasoning[item.nodeId]);
+        const open = reasoningOpen;
         return (
           <div className="mb-2 overflow-hidden rounded-lg border border-neutral-100 bg-neutral-50">
             <button

@@ -652,14 +652,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
             reasoning,
           });
         }
-        set((s) => {
-          const buffer = { ...s.streamingBuffer };
-          delete buffer[nodeId];
-          const reason = { ...s.streamingReasoning };
-          delete reason[nodeId];
-          return { streamingBuffer: buffer, streamingReasoning: reason };
-        });
       }
+      // 无条件清理流式缓冲（思考/回答都可能未写入但需要清掉临时态）
+      set((s) => {
+        const buffer = { ...s.streamingBuffer };
+        delete buffer[nodeId];
+        const reason = { ...s.streamingReasoning };
+        delete reason[nodeId];
+        return { streamingBuffer: buffer, streamingReasoning: reason };
+      });
       set({ streaming: false });
       await get().refreshPath();
     }
@@ -1087,6 +1088,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           reasoning,
         });
       }
+      // 无条件清理流式缓冲
       set((s) => {
         const b = { ...s.streamingBuffer };
         delete b[nodeId];

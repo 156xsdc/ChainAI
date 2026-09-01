@@ -5,14 +5,21 @@
 import { useEffect, useState } from "react";
 import {
   Bookmark,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
+  Download,
   MoreHorizontal,
   Plus,
+  Square,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { confirmDialog, promptDialog } from "../../store/dialogStore";
+import { ColorDialog } from "../common/ColorDialog";
+import { saveTextFile } from "../../core/io/files";
 import type { Favorite, FavoriteGroup, TreeNode } from "../../core/db";
 
 interface FavItem extends Favorite {
@@ -36,6 +43,10 @@ export function FavoritesSection() {
     fav: FavItem;
   } | null>(null);
   const menuRef = useClickOutside<HTMLDivElement>(() => setMenu(null), menu !== null);
+  /** 批量选择模式 */
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedFavs, setSelectedFavs] = useState<Set<string>>(new Set());
+  const [colorDialog, setColorDialog] = useState<FavoriteGroup | null>(null);
 
   const load = async () => {
     if (!repos) return;
@@ -89,19 +100,8 @@ export function FavoritesSection() {
     void load();
   };
 
-  const recolorGroup = async (group: FavoriteGroup) => {
-    if (!repos) return;
-    const color = await promptDialog({
-      title: "修改分组颜色",
-      label: "HEX 颜色值",
-      defaultValue: group.color,
-    });
-    if (color === null) return;
-    await repos.backend.execute(
-      `UPDATE favorite_groups SET color = ? WHERE id = ?`,
-      [color.trim(), group.id]
-    );
-    void load();
+  const recolorGroup = (group: FavoriteGroup) => {
+    setColorDialog(group);
   };
 
   const deleteGroup = async (groupId: string) => {
@@ -123,44 +123,168 @@ export function FavoritesSection() {
   const renderItem = (fav: FavItem) => (
     <div
       key={fav.id}
-      className="group/fav relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-neutral-100"
+      className={`group/fav relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left ${
+        batchMode && selectedFavs.has(fav.id) ? "bg-neutral-100" : "hover:bg-neutral-100"
+      }`}
     >
-      <button
-        className="flex min-w-0 flex-1 items-center gap-1.5"
-        onClick={() => fav.node && navigateTo(fav.node.id)}
-        title={fav.node?.question}
-      >
-        <Bookmark size={11} className="shrink-0 text-neutral-300" />
-        <span className="truncate text-xs text-neutral-600">
-          {fav.node?.question.slice(0, 18) || "已删除节点"}
-        </span>
-        {fav.note && (
-          <span className="shrink-0 text-[9px] text-neutral-400">📝</span>
-        )}
-      </button>
-      <button
-        className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-200 hover:text-neutral-600 group-hover/fav:opacity-100"
-        onClick={(e) => {
-          e.stopPropagation();
-          setMenu({ x: e.clientX, y: e.clientY, fav });
-        }}
-      >
-        <MoreHorizontal size={11} />
-      </button>
+      {batchMode ? (
+        <button
+          className="flex min-w-0 flex-1 items-center gap-1.5"
+          onClick={() =>
+            setSelectedFavs((s) => {
+              const next = new Set(s);
+              if (next.has(fav.id)) next.delete(fav.id);
+              else next.add(fav.id);
+              return next;
+            })
+          }
+          title={fav.node?.question}
+        >
+          {selectedFavs.has(fav.id) ? (
+            <CheckSquare size={13} className="shrink-0 text-neutral-700" />
+          ) : (
+            <Square size={13} className="shrink-0 text-neutral-300" />
+          )}
+          <span className="truncate text-xs text-neutral-600">
+            {fav.node?.question.slice(0, 18) || "已删除节点"}
+          </span>
+        </button>
+      ) : (
+        <button
+          className="flex min-w-0 flex-1 items-center gap-1.5"
+          onClick={() => fav.node && navigateTo(fav.node.id)}
+          title={fav.node?.question}
+        >
+          <Bookmark size={11} className="shrink-0 text-neutral-300" />
+          <span className="truncate text-xs text-neutral-600">
+            {fav.node?.question.slice(0, 18) || "已删除节点"}
+          </span>
+          {fav.note && (
+            <span className="shrink-0 text-[9px] text-neutral-400">📝</span>
+          )}
+        </button>
+      )}
+      {!batchMode && (
+        <button
+          className="shrink-0 rounded p-0.5 text-neutral-300 opacity-0 hover:bg-neutral-200 hover:text-neutral-600 group-hover/fav:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            setMenu({ x: e.clientX, y: e.clientY, fav });
+          }}
+        >
+          <MoreHorizontal size={11} />
+        </button>
+      )}
     </div>
   );
+
+  /** 批量删除：取消选中的收藏 */
+  const handleBatchDelete = async () => {
+    if (selectedFavs.size === 0) return;
+    const ok = await confirmDialog({
+      title: "批量取消收藏",
+      message: `确定取消选中 ${selectedFavs.size} 个收藏？`,
+      confirmText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    const targets = favs.filter((f) => selectedFavs.has(f.id));
+    for (const f of targets) await toggleFavorite(f.nodeId);
+    setNotice(`🗑️ 已取消 ${targets.length} 个收藏`);
+    setSelectedFavs(new Set());
+    setBatchMode(false);
+    void load();
+  };
+
+  /** 批量导出：选中的收藏导出为 Markdown */
+  const handleBatchExport = async () => {
+    if (selectedFavs.size === 0) return;
+    const targets = favs.filter((f) => selectedFavs.has(f.id) && f.node);
+    const lines: string[] = [];
+    for (const f of targets) {
+      const n = f.node!;
+      lines.push(`## ${n.question || "（无问题）"}`);
+      if (n.answer) {
+        lines.push("");
+        lines.push(n.answer.trim());
+      }
+      lines.push("");
+    }
+    const md =
+      `# 收藏导出 ${new Date().toISOString().slice(0, 10)}\n\n` +
+      lines.join("\n").trim() +
+      "\n";
+    const name = `tongtu-favorites-${new Date().toISOString().slice(0, 10)}.md`;
+    const path = await saveTextFile(name, md, [
+      { name: "Markdown", extensions: ["md"] },
+    ]);
+    if (path) setNotice(`✅ 已导出 ${targets.length} 个收藏：${path}`);
+    setBatchMode(false);
+    void load();
+  };
 
   const ungrouped = favs.filter((f) => !f.groupId);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
-      {/* 新建分组（明确入口） */}
-      <button
-        className="mb-2 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-neutral-300 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
-        onClick={() => void createGroup()}
-      >
-        <Plus size={12} /> 新建收藏分组
-      </button>
+      {/* 批量模式操作条 */}
+      {batchMode ? (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-neutral-500">
+            已选 {selectedFavs.size}
+          </span>
+          <button
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-red-500 hover:bg-red-50 disabled:text-neutral-300"
+            disabled={selectedFavs.size === 0}
+            onClick={() => void handleBatchDelete()}
+          >
+            <span className="flex items-center gap-1">
+              <Trash2 size={11} /> 删除
+            </span>
+          </button>
+          <button
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-neutral-600 hover:bg-neutral-100 disabled:text-neutral-300"
+            disabled={selectedFavs.size === 0}
+            onClick={() => void handleBatchExport()}
+          >
+            <span className="flex items-center gap-1">
+              <Download size={11} /> 导出
+            </span>
+          </button>
+          <button
+            className="shrink-0 rounded-md p-0.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+            title="退出批量模式"
+            onClick={() => {
+              setBatchMode(false);
+              setSelectedFavs(new Set());
+            }}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* 新建分组（明确入口） */}
+          <button
+            className="mb-1 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-neutral-300 py-1.5 text-[11px] text-neutral-500 hover:border-neutral-500 hover:bg-neutral-50 hover:text-neutral-700"
+            onClick={() => void createGroup()}
+          >
+            <Plus size={12} /> 新建收藏分组
+          </button>
+          {/* 批量管理入口 */}
+          {favs.length > 0 && (
+            <button
+              className="mb-2 flex w-full items-center justify-center gap-1 rounded-lg py-1 text-[11px] text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600"
+              onClick={() => {
+                setBatchMode(true);
+                setSelectedFavs(new Set());
+              }}
+            >
+              <CheckSquare size={11} /> 批量管理
+            </button>
+          )}
+        </>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {favs.length === 0 ? (
@@ -294,6 +418,27 @@ export function FavoritesSection() {
           </button>
         </div>
       )}
+
+      {/* 分组颜色对话框（预设色板 + 自定义） */}
+      <ColorDialog
+        open={colorDialog !== null}
+        title="分组颜色"
+        value={colorDialog?.color ?? "#1a1a1a"}
+        onClose={() => setColorDialog(null)}
+        onConfirm={(color) => {
+          const g = colorDialog;
+          if (!g || !repos) return;
+          void (async () => {
+            await repos.backend.execute(
+              `UPDATE favorite_groups SET color = ? WHERE id = ?`,
+              [color, g.id]
+            );
+            setNotice(`🎨 已应用颜色 ${color}`);
+            setColorDialog(null);
+            void load();
+          })();
+        }}
+      />
     </div>
   );
 }

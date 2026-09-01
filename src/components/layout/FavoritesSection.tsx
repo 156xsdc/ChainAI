@@ -214,10 +214,15 @@ export function FavoritesSection() {
     const usedNames = new Set<string>();
     let exported = 0;
     let skipped = 0;
+    let failed = 0;
     for (const f of targets) {
       const n = f.node;
-      // 无回答 / 节点已删除的收藏无法导出——计数并跳过（明确提示）
-      if (!n || !n.answer.trim()) {
+      // 节点已删除 / 无回答的收藏无法导出——计数并跳过（明确提示）
+      if (!n) {
+        skipped++;
+        continue;
+      }
+      if (!n.answer.trim()) {
         skipped++;
         continue;
       }
@@ -239,18 +244,18 @@ export function FavoritesSection() {
           content: n.answer.trim() + "\n",
         });
         exported++;
-      } catch {
-        // 单条失败继续
+      } catch (e) {
+        failed++;
+        console.error("导出失败", name, e);
       }
     }
+    const extra =
+      (skipped > 0 ? `；跳过 ${skipped} 项（无回答或节点已删除）` : "") +
+      (failed > 0 ? `；${failed} 项写入失败` : "");
     if (exported > 0) {
-      setNotice(
-        `✅ 已导出 ${exported} 个回答到：${dir}\\${folderName}${
-          skipped > 0 ? `（跳过 ${skipped} 项：无回答或节点已删除）` : ""
-        }`
-      );
-    } else if (skipped > 0) {
-      setNotice(`没有可导出的内容（选中的 ${skipped} 项均无回答或节点已删除）`);
+      setNotice(`✅ 已导出 ${exported} 个回答到：${dir}\\${folderName}${extra}`);
+    } else if (skipped > 0 || failed > 0) {
+      setNotice(`没有可导出的内容${extra}`);
     } else {
       setNotice("没有可导出的内容");
     }

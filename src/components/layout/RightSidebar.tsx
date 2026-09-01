@@ -104,14 +104,20 @@ export function RightSidebar() {
   }, [repos, noteVersion]);
 
   // 选中便签 → 加载内容
+  /** 选中便签请求序号：防止快速切换时慢的旧请求覆盖新便签内容 */
+  const selectSeq = useRef(0);
+
   const selectNote = async (note: Note) => {
+    const seq = ++selectSeq.current;
     setSelectedId(note.id);
     setTitle(note.title);
     setColor(note.color);
     setTagsText(note.tags.join(", "));
     setCategory(note.category);
     setCurrentDir(note.category);
-    setContent(await readNoteContent(repos!, note));
+    const content = await readNoteContent(repos!, note);
+    // 期间又选了别的便签（seq 变化）→ 丢弃过期结果
+    if (seq === selectSeq.current) setContent(content);
   };
 
   // 持久化目录路径（含根 ""）

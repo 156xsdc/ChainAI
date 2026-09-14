@@ -15,6 +15,26 @@ interface MenuState {
   editable: HTMLElement | null;
 }
 
+/**
+ * 写入输入框的值：必须绕过 React 的 value tracker。
+ * React 会在节点上劫持 value 的 setter 并记录"最后写入的值"：
+ * 直接 `el.value = x` 会让 tracker 认为值已经同步，随后派发的 input 事件
+ * 被判定为"值没变"而去重 —— React 的 onChange 不触发，文字只留在 DOM 里、
+ * 状态里没有。之后任何一次重渲染都会把它重置回旧状态。
+ */
+function setInputValue(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+): void {
+  const proto =
+    el instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter) setter.call(el, value);
+  else el.value = value;
+}
+
 export function TextContextMenu() {
   const [state, setState] = useState<MenuState | null>(null);
   const menuRef = useClickOutside<HTMLDivElement>(() => setState(null), state !== null);
@@ -69,10 +89,10 @@ export function TextContextMenu() {
       const el = editable as HTMLTextAreaElement | HTMLInputElement;
       const start = el.selectionStart ?? el.value.length;
       const end = el.selectionEnd ?? el.value.length;
-      el.value = el.value.slice(0, start) + text + el.value.slice(end);
+      setInputValue(el, el.value.slice(0, start) + text + el.value.slice(end));
       const pos = start + text.length;
       el.selectionStart = el.selectionEnd = pos;
-      // 通知 React 受控组件值已变化
+      // 通知 React 受控组件值已变化（必须绕过 tracker，见 setInputValue）
       el.dispatchEvent(new Event("input", { bubbles: true }));
     } catch {
       // fallback：部分环境允许 execCommand

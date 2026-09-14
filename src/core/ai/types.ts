@@ -46,6 +46,12 @@ export interface ChatStreamChunk {
   reasoning?: string;
   done: boolean;
   usage?: TokenUsage;
+  /**
+   * 结束原因（随最后一个 chunk 返回）。
+   * "length" = 输出被长度上限截断（思考型模型常见：思考过程吃掉了全部 max_tokens，
+   * 正文为空），据此给用户明确提示，而不是静默"没有回复"。
+   */
+  finishReason?: string;
 }
 
 export interface TokenUsage {

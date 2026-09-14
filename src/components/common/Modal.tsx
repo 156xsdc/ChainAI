@@ -10,14 +10,30 @@ interface ModalProps {
   onClose: () => void;
   children: ReactNode;
   width?: number;
+  /**
+   * 点击遮罩是否关闭（默认 true）。
+   * 表单类弹窗（如编辑 AI 配置）可传 false，避免误点遮罩丢掉已填内容。
+   */
+  closeOnBackdrop?: boolean;
 }
 
-export function Modal({ open, title, onClose, children, width = 440 }: ModalProps) {
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  width = 440,
+  closeOnBackdrop = true,
+}: ModalProps) {
   if (!open) return null;
   return (
     <div
       className="animate-modal-fade fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6 backdrop-blur-[2px]"
-      onClick={onClose}
+      // 用 mousedown（且按下时就在遮罩上）判断关闭：
+      // 面板内选中文字拖到面板外松手不再被误判为"点击遮罩"而关闭弹窗
+      onMouseDown={(e) => {
+        if (closeOnBackdrop && e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         className="animate-modal-pop flex max-h-[82vh] w-full flex-col overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-[0_16px_48px_rgba(0,0,0,0.12)]"

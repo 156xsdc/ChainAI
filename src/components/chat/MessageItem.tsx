@@ -197,8 +197,14 @@ export const MessageItem = memo(function MessageItem({
           {item.content}
           <StreamingCursor />
         </div>
-      ) : (
+      ) : item.content.trim() ? (
         <Markdown content={item.content} />
+      ) : (
+        // 模型只给了思考过程（或输出被长度上限截断）：正文为空也要有可见占位，
+        // 否则消息是"隐形"的，用户会以为回复丢了
+        <div className="text-[13px] leading-relaxed text-neutral-400">
+          （模型没有输出正文，可展开上方「思考过程」查看，或点 ↻ 重新生成）
+        </div>
       )}
 
       {/* 选中文本后弹出的引用按钮 */}

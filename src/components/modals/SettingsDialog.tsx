@@ -3,39 +3,23 @@
  * 管理多提供商配置：列表 / 编辑 / 默认切换 / 测试连接
  * 持久化到 settings('ai.providers')
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Download, FolderOpen, Plus, RefreshCw, Trash2, Upload, Trash } from "lucide-react";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig, ProviderId } from "../../core/ai/types";
+import {
+  blankConfig,
+  cloneConfig,
+  mergeFormValues,
+  normalizeConfig,
+  PROVIDER_META,
+  switchProviderConfig,
+} from "../../core/ai/configDraft";
 import { useChatStore } from "../../store/chatStore";
 import { chooseDirectory } from "../../core/io/files";
 import { getNotesDir } from "../../core/notes/noteService";
 import { Modal } from "../common/Modal";
 import { RecycleBinDialog } from "./RecycleBinDialog";
-
-const PROVIDER_META: Record<
-  ProviderId,
-  { label: string; defaultBaseUrl: string; needKey: boolean }
-> = {
-  openai: { label: "OpenAI 兼容", defaultBaseUrl: "https://api.openai.com/v1", needKey: false },
-  anthropic: { label: "Anthropic Claude", defaultBaseUrl: "https://api.anthropic.com", needKey: true },
-  ollama: { label: "Ollama 本地", defaultBaseUrl: "http://localhost:11434", needKey: false },
-};
-
-function blankConfig(providerId: ProviderId): ProviderConfig {
-  const meta = PROVIDER_META[providerId];
-  return {
-    id: crypto.randomUUID(),
-    providerId,
-    name: providerId === "openai" ? "默认" : meta.label,
-    baseUrl: meta.defaultBaseUrl,
-    apiKey: "",
-    model: "",
-    temperature: 0.7,
-    maxTokens: 2048,
-    useMaxCompletionTokens: false,
-  };
-}
 
 export function SettingsDialog({
   open,
@@ -63,10 +47,13 @@ export function SettingsDialog({
   const [notifyInfo, setNotifyInfo] = useState(true);
   const [notesDir, setNotesDir] = useState("");
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
+  /** AI 配置编辑表单容器：保存/测试时以 DOM 中的实际输入为准 */
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
-      setConfigs([...providerManager.getConfigs()]);
+      // 副本：列表渲染与编辑草稿都不与 providerManager 内部对象共享引用
+      setConfigs(providerManager.getConfigs().map(cloneConfig));
       setEditing(null);
       setTestResult(null);
       // 加载清理设置
@@ -151,17 +138,59 @@ export function SettingsDialog({
     setConfigs([...list]);
   };
 
+  /** 打开编辑器：始终基于副本，避免与 providerManager 内部对象共享引用 */
+  const openEditor = (config: ProviderConfig) => {
+    setEditing(cloneConfig(config));
+    setTestResult(null);
+  };
+
+  /** 表单字段节点（编辑表单里的输入框都是非受控的，DOM 即唯一事实来源） */
+  const fieldEl = (field: string) =>
+    formRef.current?.querySelector<HTMLInputElement>(`[data-field="${field}"]`);
+
+  /**
+   * 读取表单当前值（以界面上实际看到的为准）。
+   * 表单输入是非受控的：无论 typed / 粘贴 / 自动填充 / 输入法，
+   * 只要界面上填了，保存和测试就读得到，不会被旧状态覆盖。
+   */
+  const readForm = (base: ProviderConfig): ProviderConfig =>
+    mergeFormValues(base, {
+      name: fieldEl("name")?.value,
+      baseUrl: fieldEl("baseUrl")?.value,
+      apiKey: fieldEl("apiKey")?.value,
+      model: fieldEl("model")?.value,
+      temperature: fieldEl("temperature")?.value,
+      maxTokens: fieldEl("maxTokens")?.value,
+      useMaxCompletionTokens: fieldEl("useMaxCompletionTokens")?.checked,
+    });
+
+  /** 写回表单字段（仅用于切换提供商时刷新默认地址/名称） */
+  const writeField = (field: string, value: string) => {
+    const el = fieldEl(field);
+    if (el) el.value = value;
+  };
+
+  /** 切换提供商：只刷新未自定义的地址/名称，其余已填内容原样保留 */
+  const switchProvider = (pid: ProviderId) => {
+    if (!editing) return;
+    const next = switchProviderConfig(readForm(editing), pid);
+    writeField("baseUrl", next.baseUrl);
+    writeField("name", next.name);
+    setEditing(next);
+  };
+
   const handleSave = async () => {
     if (!editing) return;
-    const err = providerManager.validateConfig(editing);
+    const next = normalizeConfig(readForm(editing));
+    const err = providerManager.validateConfig(next);
     if (err) {
       setTestResult(`⚠️ ${err}`);
       return;
     }
     const list = [...configs];
-    const idx = list.findIndex((c) => c.id === editing.id);
-    if (idx >= 0) list[idx] = editing;
-    else list.push(editing);
+    const idx = list.findIndex((c) => c.id === next.id);
+    if (idx >= 0) list[idx] = next;
+    else list.push(next);
     await persist(list);
     setEditing(null);
     setTestResult(null);
@@ -171,7 +200,9 @@ export function SettingsDialog({
     if (!editing) return;
     setTesting(true);
     setTestResult(null);
-    const res = await providerManager.testConnection(editing);
+    const res = await providerManager.testConnection(
+      normalizeConfig(readForm(editing))
+    );
     setTestResult(res.ok ? `✅ ${res.message}` : `❌ ${res.message}`);
     setTesting(false);
   };
@@ -186,10 +217,7 @@ export function SettingsDialog({
             <span className="text-xs text-neutral-500">已保存的配置</span>
             <button
               className="flex items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
-              onClick={() => {
-                setEditing(blankConfig("openai"));
-                setTestResult(null);
-              }}
+              onClick={() => openEditor(blankConfig("openai"))}
             >
               <Plus size={12} /> 新增
             </button>
@@ -241,10 +269,7 @@ export function SettingsDialog({
               </button>
               <button
                 className="shrink-0 whitespace-nowrap rounded-md px-1.5 py-1 text-[11px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
-                onClick={() => {
-                  setEditing({ ...c });
-                  setTestResult(null);
-                }}
+                onClick={() => openEditor(c)}
               >
                 编辑
               </button>
@@ -445,24 +470,29 @@ export function SettingsDialog({
       </div>
     </Modal>
 
-    {/* 编辑 AI 配置（独立弹窗） */}
+    {/* 编辑 AI 配置（独立弹窗）：不响应点击遮罩，避免误点丢掉已填内容 */}
     <Modal
       open={editing !== null}
       title="编辑 AI 配置"
       onClose={() => setEditing(null)}
       width={560}
+      closeOnBackdrop={false}
     >
       {editing && (
-          <div className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+          // key：切换编辑对象（新增/编辑另一条）时重建表单，重新套用各字段初始值
+          <div
+            key={editing.id}
+            ref={formRef}
+            className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4"
+          >
             <div className="grid grid-cols-2 gap-3">
               <Field label="提供商">
                 <select
                   className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
                   value={editing.providerId}
-                  onChange={(e) => {
-                    const pid = e.target.value as ProviderId;
-                    setEditing({ ...blankConfig(pid), id: editing.id, name: editing.name });
-                  }}
+                  // 下拉获得焦点时滚轮/键盘会静默改值 → 滚轮先失焦，避免"滚一下就换提供商"
+                  onWheel={(e) => e.currentTarget.blur()}
+                  onChange={(e) => switchProvider(e.target.value as ProviderId)}
                 >
                   {Object.entries(PROVIDER_META).map(([k, v]) => (
                     <option key={k} value={k}>
@@ -474,15 +504,18 @@ export function SettingsDialog({
               <Field label="名称">
                 <input
                   className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
-                  value={editing.name}
-                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  data-field="name"
+                  defaultValue={editing.name}
+                  autoComplete="off"
                 />
               </Field>
               <Field label="API 地址 (baseUrl)" wide>
                 <input
                   className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
-                  value={editing.baseUrl}
-                  onChange={(e) => setEditing({ ...editing, baseUrl: e.target.value })}
+                  data-field="baseUrl"
+                  defaultValue={editing.baseUrl}
+                  autoComplete="off"
+                  spellCheck={false}
                   placeholder={PROVIDER_META[editing.providerId].defaultBaseUrl}
                 />
               </Field>
@@ -490,55 +523,51 @@ export function SettingsDialog({
                 <input
                   type="password"
                   className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
-                  value={editing.apiKey ?? ""}
-                  onChange={(e) => setEditing({ ...editing, apiKey: e.target.value })}
+                  data-field="apiKey"
+                  defaultValue={editing.apiKey ?? ""}
+                  // 自动填充会在聚焦/输入时改写字段（甚至清掉刚填的内容）→ 关闭
+                  autoComplete="new-password"
+                  spellCheck={false}
                   placeholder={PROVIDER_META[editing.providerId].needKey ? "必填" : "可选（本地服务可留空）"}
                 />
               </Field>
               <Field label="模型">
                 <input
                   className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
-                  value={editing.model}
-                  onChange={(e) => setEditing({ ...editing, model: e.target.value })}
+                  data-field="model"
+                  defaultValue={editing.model}
+                  autoComplete="off"
+                  spellCheck={false}
                   placeholder="如 gpt-4o-mini / qwen2.5"
                 />
               </Field>
-              <Field label="温度">
-                <input
-                  type="number"
-                  step={0.1}
-                  min={0}
-                  max={2}
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
-                  value={editing.temperature ?? 0.7}
-                  onChange={(e) =>
-                    setEditing({ ...editing, temperature: Number(e.target.value) })
-                  }
-                />
-              </Field>
-              <Field label="最大 Token">
-                <input
-                  type="number"
-                  className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
-                  value={editing.maxTokens ?? 2048}
-                  onChange={(e) =>
-                    setEditing({ ...editing, maxTokens: Number(e.target.value) })
-                  }
-                />
-              </Field>
+              {/* 数字框用非受控 + 保存时读 DOM：原生上下箭头改的是 DOM，
+                  若由 state 反写，任何一次重渲染都会把箭头刚调好的值打回去 */}
+              <NumberField
+                label="温度"
+                field="temperature"
+                defaultValue={editing.temperature}
+                fallback={0.7}
+                step={0.1}
+                min={0}
+                max={2}
+              />
+              <NumberField
+                label="最大 Token"
+                field="maxTokens"
+                defaultValue={editing.maxTokens}
+                fallback={2048}
+                step={1}
+                min={1}
+              />
               {editing.providerId === "openai" && (
                 <Field label="新模型参数">
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
                     <input
                       type="checkbox"
                       className="accent-neutral-800"
-                      checked={editing.useMaxCompletionTokens ?? false}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          useMaxCompletionTokens: e.target.checked,
-                        })
-                      }
+                      data-field="useMaxCompletionTokens"
+                      defaultChecked={editing.useMaxCompletionTokens ?? false}
                     />
                     使用 max_completion_tokens（GPT-5/o系列）
                   </label>
@@ -601,6 +630,50 @@ function Field({
       <label className="mb-1 block truncate text-[11px] text-neutral-400">{label}</label>
       {children}
     </div>
+  );
+}
+
+/**
+ * 数字输入框（非受控）。
+ * 原生上下箭头改的是 DOM 值：若让 React 用 state 反写，任何一次重渲染
+ * 都会把刚调好的值打回去（表现为"点调整按钮就被重置"）。
+ * 这里只做初始值 + 滚轮防误改，实际值在保存时从 DOM 读取。
+ */
+function NumberField({
+  label,
+  field,
+  defaultValue,
+  fallback,
+  step,
+  min,
+  max,
+}: {
+  label: string;
+  /** data-field 名称（保存时按此读取） */
+  field: string;
+  defaultValue: number | undefined;
+  /** 空值时的默认值（仅作占位提示） */
+  fallback: number;
+  step: number;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <Field label={label}>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={step}
+        min={min}
+        max={max}
+        autoComplete="off"
+        data-field={field}
+        className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-neutral-400"
+        defaultValue={defaultValue === undefined ? "" : String(defaultValue)}
+        placeholder={String(fallback)}
+        onWheel={(e) => e.currentTarget.blur()}
+      />
+    </Field>
   );
 }
 

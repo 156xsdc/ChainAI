@@ -81,17 +81,22 @@ export class OpenAIAdapter extends BaseAdapter {
 
     const queue: ChatStreamChunk[] = [];
     let usage: TokenUsage | undefined;
+    let finishReason: string | undefined;
 
     const parser = createSSEParser((ev) => {
       if (ev.data === "[DONE]") return;
       const json = parseJSONSafe<OpenAISSEPayload>(ev.data);
       if (!json) return;
 
-      const delta = json.choices?.[0]?.delta;
+      const choice = json.choices?.[0];
+      const delta = choice?.delta;
       const chunk: ChatStreamChunk = { done: false };
       if (delta?.content) chunk.delta = delta.content;
       if (delta?.reasoning_content) chunk.reasoning = delta.reasoning_content;
       else if (delta?.reasoning) chunk.reasoning = delta.reasoning;
+
+      // finish_reason: "stop" | "length" | "content_filter" ...
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
 
       if (json.usage) {
         usage = {
@@ -112,7 +117,7 @@ export class OpenAIAdapter extends BaseAdapter {
     parser.flush();
     while (queue.length > 0) yield queue.shift()!;
 
-    yield { done: true, usage };
+    yield { done: true, usage, finishReason };
   }
 
   async listModels(config: ProviderConfig): Promise<ModelListResult> {

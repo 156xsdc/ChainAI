@@ -15,7 +15,12 @@ import { BaseAdapter, trimSlash } from "./base";
 
 interface AnthropicSSEPayload {
   type?: string;
-  delta?: { type?: string; text?: string; thinking?: string };
+  delta?: {
+    type?: string;
+    text?: string;
+    thinking?: string;
+    stop_reason?: string | null;
+  };
   usage?: { input_tokens?: number; output_tokens?: number };
 }
 
@@ -97,6 +102,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
     const queue: ChatStreamChunk[] = [];
     let usage: TokenUsage | undefined;
+    let finishReason: string | undefined;
 
     const parser = createSSEParser((ev) => {
       const json = parseJSONSafe<AnthropicSSEPayload>(ev.data);
@@ -108,13 +114,23 @@ export class AnthropicAdapter extends BaseAdapter {
         } else if (json.delta.type === "thinking_delta" && json.delta.thinking) {
           queue.push({ reasoning: json.delta.thinking, done: false });
         }
-      } else if (json.type === "message_delta" && json.usage) {
-        usage = {
-          promptTokens: json.usage.input_tokens,
-          completionTokens: json.usage.output_tokens,
-          totalTokens:
-            (json.usage.input_tokens ?? 0) + (json.usage.output_tokens ?? 0),
-        };
+      } else if (json.type === "message_delta") {
+        // stop_reason: end_turn / max_tokens / stop_sequence / tool_use
+        // 归一化 max_tokens → length（与 OpenAI 系保持一致的判断口径）
+        if (json.delta?.stop_reason) {
+          finishReason =
+            json.delta.stop_reason === "max_tokens"
+              ? "length"
+              : json.delta.stop_reason;
+        }
+        if (json.usage) {
+          usage = {
+            promptTokens: json.usage.input_tokens,
+            completionTokens: json.usage.output_tokens,
+            totalTokens:
+              (json.usage.input_tokens ?? 0) + (json.usage.output_tokens ?? 0),
+          };
+        }
       }
     });
 
@@ -125,7 +141,7 @@ export class AnthropicAdapter extends BaseAdapter {
     parser.flush();
     while (queue.length > 0) yield queue.shift()!;
 
-    yield { done: true, usage };
+    yield { done: true, usage, finishReason };
   }
 
   async listModels(config: ProviderConfig): Promise<ModelListResult> {

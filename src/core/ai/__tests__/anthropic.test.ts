@@ -52,6 +52,30 @@ describe("AnthropicAdapter", () => {
     expect(chunks.map((c) => c.delta).filter(Boolean)).toEqual(["你好"]);
   });
 
+  it("stop_reason=max_tokens 归一化为 length；thinking_delta 进 reasoning", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockStreamResponse([
+        'event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"思考中"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":4096}}\n\n',
+      ])
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new AnthropicAdapter();
+    let reasoning = "";
+    let last: { delta?: string; finishReason?: string } = {};
+    for await (const c of adapter.chat(
+      { messages: [{ role: "user", content: "hi" }] },
+      anthropicConfig
+    )) {
+      if (c.reasoning) reasoning += c.reasoning;
+      if (c.done) last = c;
+    }
+    expect(reasoning).toBe("思考中");
+    expect(last.delta).toBeUndefined();
+    expect(last.finishReason).toBe("length");
+  });
+
   it("缺少 API Key 时校验失败", () => {
     const adapter = new AnthropicAdapter();
     const err = adapter.validateConfig({ ...anthropicConfig, apiKey: "" });

@@ -21,6 +21,8 @@ interface OllamaLine {
     thinking?: string;
   };
   done?: boolean;
+  /** stop | length（输出长度上限截断） */
+  done_reason?: string;
   prompt_eval_count?: number;
   eval_count?: number;
 }
@@ -63,6 +65,7 @@ export class OllamaAdapter extends BaseAdapter {
 
     const queue: ChatStreamChunk[] = [];
     let usage: TokenUsage | undefined;
+    let finishReason: string | undefined;
 
     const parser = createLineParser((line) => {
       const json = parseJSONSafe<OllamaLine>(line);
@@ -80,6 +83,7 @@ export class OllamaAdapter extends BaseAdapter {
         queue.push({ delta: json.message.content, done: false });
       }
       if (json.done) {
+        if (json.done_reason) finishReason = json.done_reason;
         usage = {
           promptTokens: json.prompt_eval_count,
           completionTokens: json.eval_count,
@@ -96,7 +100,7 @@ export class OllamaAdapter extends BaseAdapter {
     parser.flush();
     while (queue.length > 0) yield queue.shift()!;
 
-    yield { done: true, usage };
+    yield { done: true, usage, finishReason };
   }
 
   async listModels(config: ProviderConfig): Promise<ModelListResult> {

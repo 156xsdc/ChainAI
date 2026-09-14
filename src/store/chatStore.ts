@@ -301,7 +301,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         });
       }
       const streamed = streamingBuffer[node.id];
-      if (node.answer || streamed) {
+      if (node.answer || node.reasoning || streamed) {
         items.push({
           kind: "message",
           role: "assistant",
@@ -588,6 +588,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     let answer = "";
     let reasoning = "";
+    /** 结束原因："length" = 输出被长度上限截断（思考型模型常见：思考吃光额度、正文为空） */
+    let finishReason: string | undefined;
+    let aborted = false;
     try {
       for await (const chunk of providerManager.chat({
         messages,
@@ -612,10 +615,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (typewriter) typewriter.feed(chunk.delta);
           else updateBuffer(answer);
         }
+        if (chunk.done && chunk.finishReason) finishReason = chunk.finishReason;
       }
     } catch (err) {
       const ce = err instanceof ChatError ? err : ChatError.fromError(err);
-      if (ce.code !== "aborted") {
+      aborted = ce.code === "aborted";
+      if (!aborted) {
         set({ uiError: ce.message });
       }
       // 上下文超限：自动学习模型窗口（下次预检在超限前拦截，无需手动配置）
@@ -652,6 +657,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
             reasoning,
           });
         }
+        if (finishReason === "length") {
+          set({
+            notice:
+              "✂️ 回复可能被「最大 Token」截断（思考型模型的思考过程也计入上限），可在设置里调大后 ↻ 重新生成。",
+            noticeTone: "info",
+          });
+        }
+      } else if (reasoning) {
+        // 只有思考、没有正文：思考过程也必须落库，否则刷新后连思考都不见了
+        await repos.nodes.updateNode(nodeId, { reasoning });
+        if (!aborted) {
+          set({
+            uiError:
+              finishReason === "length"
+                ? "模型只输出了思考过程、没有正文：思考已用尽「最大 Token」额度。请调大「最大 Token」（如 8192）或更换模型，然后点回复上的 ↻ 重新生成。"
+                : "模型只返回了思考内容、没有正文（思考过程已保留，可展开查看）。可点回复上的 ↻ 重新生成。",
+          });
+        }
+      } else if (!aborted && finishReason === "length") {
+        set({
+          uiError: "模型没有返回任何内容（输出达到长度上限）：请调大「最大 Token」后重试。",
+        });
       }
       // 无条件清理流式缓冲（思考/回答都可能未写入但需要清掉临时态）
       set((s) => {
@@ -1051,6 +1078,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     };
     let reasoning = "";
+    /** 结束原因：length = 输出被长度上限截断 */
+    let finishReason: string | undefined;
+    let aborted = false;
     try {
       for await (const chunk of providerManager.chat({
         messages,
@@ -1073,10 +1103,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           answer += chunk.delta;
           updateBuffer(answer);
         }
+        if (chunk.done && chunk.finishReason) finishReason = chunk.finishReason;
       }
     } catch (err) {
       const ce = err instanceof ChatError ? err : ChatError.fromError(err);
-      if (ce.code !== "aborted") set({ uiError: ce.message });
+      aborted = ce.code === "aborted";
+      if (!aborted) set({ uiError: ce.message });
     } finally {
       streamController = null;
       if (answer) {
@@ -1091,6 +1123,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
           answerVersion: newVersion,
           reasoning,
         });
+        if (finishReason === "length") {
+          set({
+            notice: "✂️ 回复可能被「最大 Token」截断，可在设置里调大后重新生成。",
+            noticeTone: "info",
+          });
+        }
+      } else if (reasoning) {
+        // 只有思考、没有正文：思考过程也要留下来
+        await repos.nodes.updateNode(nodeId, { reasoning });
+        if (!aborted) {
+          set({
+            uiError: "模型只返回了思考内容、没有正文（思考过程已保留）。可调大「最大 Token」或更换模型后重试。",
+          });
+        }
       }
       // 无条件清理流式缓冲
       set((s) => {

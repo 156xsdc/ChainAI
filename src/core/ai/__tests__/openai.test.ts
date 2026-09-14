@@ -67,6 +67,31 @@ describe("OpenAIAdapter", () => {
     expect(chunks[1].delta).toBe("答案");
   });
 
+  it("识别 finish_reason=length（思考吃光额度、正文为空）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockStreamResponse([
+        'data: {"choices":[{"delta":{"reasoning_content":"想了很久"}}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+        "data: [DONE]\n\n",
+      ])
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new OpenAIAdapter();
+    let reasoning = "";
+    let last: { delta?: string; finishReason?: string } = {};
+    for await (const c of adapter.chat(
+      { messages: [{ role: "user", content: "hi" }] },
+      openAIConfig
+    )) {
+      if (c.reasoning) reasoning += c.reasoning;
+      if (c.done) last = c;
+    }
+    expect(reasoning).toBe("想了很久");
+    expect(last.delta).toBeUndefined();
+    expect(last.finishReason).toBe("length");
+  });
+
   it("401 归一化为 auth 错误", async () => {
     vi.stubGlobal(
       "fetch",

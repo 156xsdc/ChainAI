@@ -195,23 +195,37 @@ export class TreeService {
   }
 
   /**
-   * 「上级」跳转目标：回到当前分支**分叉出来的那个节点**。
+   * 「上级」跳转目标：回到**分叉开始的节点**。
    *
-   * 规则：会话（分支 / 新开始 / 合并）起点节点的父节点 = 分叉点；
-   * 因此分支内无论多深，一步就能跳出分支回到分叉处。
-   * - 主链（不属于任何会话）：等价于上一节点
-   * - 起点没有父节点（异常数据）：退化为上一节点
+   * 做法：从当前节点的父节点起沿父链上溯，第一个"分叉点"就是目标 —— 直接跳过去，
+   * 不必逐层点上一节点。分叉点的判定（任一成立）：
+   * - 该节点有 ≥2 个活跃子节点（链在这里分成几路，含 Markdown 导入出来的树）
+   * - 它唯一的子节点是会话起点（即从它「分叉 / 新开始 / 合并」出来的）
+   *
+   * 例：四大文明古国 →（古中国 → 夏朝）+（古埃及）+（古巴比伦）
+   *    从「夏朝」点上级 → 直接回到「四大文明古国」。
+   * - 纯线性对话（一路上都没有分叉）：退化为上一节点
+   * - 根节点：没有上级
    */
   async resolveUpNodeId(nodeId: string): Promise<string | null> {
-    const session = await this.getSessionForNode(nodeId);
-    const anchorId = session?.startNodeId ?? nodeId;
-    const anchorParents = await this.nodes.getParents(anchorId);
-    if (anchorParents.length > 0) return anchorParents[0].id;
-    if (anchorId !== nodeId) {
-      const direct = await this.nodes.getParents(nodeId);
-      return direct[0]?.id ?? null;
+    const parents = await this.nodes.getParents(nodeId);
+    if (parents.length === 0) return null;
+    const fallback = parents[0].id;
+    let cur: string | null = fallback;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const children = await this.nodes.getChildren(cur);
+      if (children.length > 1) return cur;
+      if (children.length === 1) {
+        const childSession = await this.sessions.getByStartNode(children[0].id);
+        if (childSession) return cur;
+      }
+      const up = await this.nodes.getParents(cur);
+      if (up.length === 0) break;
+      cur = up[0].id;
     }
-    return null;
+    return fallback;
   }
 
   /**

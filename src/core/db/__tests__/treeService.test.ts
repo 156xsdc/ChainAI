@@ -77,43 +77,55 @@ describe("TreeService", () => {
     await expect(service.createMerge([a.id])).rejects.toThrow("至少");
   });
 
-  it("resolveUpNodeId：分支内任意深度都回到分叉点（不是上一节点）", async () => {
-    const n1 = await repo.nodes.createNode({ question: "主线1" });
-    const n2 = await repo.nodes.createNode({ question: "主线2" });
-    await repo.nodes.addEdge(n1.id, n2.id);
+  it("resolveUpNodeId：从深处一步回到分叉点（四大文明古国场景）", async () => {
+    // 根 → 文明古国；从文明古国延伸出"古中国 → 夏朝"，并从文明古国分叉出"古埃及"
+    const root = await repo.nodes.createNode({ question: "根" });
+    const civ = await repo.nodes.createNode({ question: "四大文明古国" });
+    await repo.nodes.addEdge(root.id, civ.id);
+    const { node: china } = await service.addChild(civ.id, { question: "古中国" });
+    const { node: xia } = await service.addChild(china.id, { question: "夏朝" });
+    await service.createBranch(civ.id, { name: "古埃及" });
 
-    // 从 n2 分叉，分支内继续两层
-    const { node: b1 } = await service.createBranch(n2.id, { name: "分支" });
+    // 关键：从"夏朝"点上级 → 直接回到分叉点"四大文明古国"（而不是"古中国"）
+    expect(await service.resolveUpNodeId(xia.id)).toBe(civ.id);
+    // 古中国 → 四大文明古国（上一节点恰是分叉点，行为一致）
+    expect(await service.resolveUpNodeId(china.id)).toBe(civ.id);
+    // 分叉点本身再往上：上面是线性段 → 上一节点
+    expect(await service.resolveUpNodeId(civ.id)).toBe(root.id);
+    // 根节点没有上级
+    expect(await service.resolveUpNodeId(root.id)).toBeNull();
+  });
+
+  it("resolveUpNodeId：分支起点父节点（唯一子节点也是分叉出来的）同样算分叉点", async () => {
+    // 从叶子节点分叉：父节点只有一个子节点，但它是"分叉出来的"
+    const leaf = await repo.nodes.createNode({ question: "叶子" });
+    const { node: b1 } = await service.createBranch(leaf.id, { name: "分支" });
     const { node: b2 } = await service.addChild(b1.id, { question: "分支内1" });
     const { node: b3 } = await service.addChild(b2.id, { question: "分支内2" });
 
-    // 分支起点 → 分叉点
-    expect(await service.resolveUpNodeId(b1.id)).toBe(n2.id);
-    // 分支深处 → 依然是分叉点（而不是上一节点 b2）
-    expect(await service.resolveUpNodeId(b3.id)).toBe(n2.id);
-    // 主链不受影响：仍然是上一节点
-    expect(await service.resolveUpNodeId(n2.id)).toBe(n1.id);
-    // 根节点没有上级
-    expect(await service.resolveUpNodeId(n1.id)).toBeNull();
+    expect(await service.resolveUpNodeId(b1.id)).toBe(leaf.id);
+    expect(await service.resolveUpNodeId(b3.id)).toBe(leaf.id);
   });
 
-  it("resolveUpNodeId：嵌套分支逐层回退 + 新开始同样按分叉点处理", async () => {
-    const n1 = await repo.nodes.createNode({ question: "主线" });
-    const { node: b1 } = await service.createBranch(n1.id, { name: "分支A" });
-    const { node: b1c } = await service.addChild(b1.id, { question: "A 内" });
-    // 在分支 A 内部再分叉出分支 B
-    const { node: b2 } = await service.createBranch(b1c.id, { name: "分支B" });
-    const { node: b2c } = await service.addChild(b2.id, { question: "B 内" });
+  it("resolveUpNodeId：纯线性对话退化为上一节点；嵌套分支回到最近的分叉点", async () => {
+    // 线性链：a → b → c（一路上无分叉）
+    const a = await repo.nodes.createNode({ question: "A" });
+    const b = await repo.nodes.createNode({ question: "B" });
+    const c = await repo.nodes.createNode({ question: "C" });
+    await repo.nodes.addEdge(a.id, b.id);
+    await repo.nodes.addEdge(b.id, c.id);
+    expect(await service.resolveUpNodeId(c.id)).toBe(b.id);
+    expect(await service.resolveUpNodeId(b.id)).toBe(a.id);
+    expect(await service.resolveUpNodeId(a.id)).toBeNull();
 
-    // 分支 B 内 → 回到 B 的分叉点（分支 A 内的节点）
-    expect(await service.resolveUpNodeId(b2c.id)).toBe(b1c.id);
-    // 分支 A 内 → 回到 A 的分叉点（主线）
-    expect(await service.resolveUpNodeId(b1c.id)).toBe(n1.id);
+    // 在 a 处再分叉：从 c 出发应回到最近的分叉点 a
+    await service.createBranch(a.id, { name: "分叉" });
+    expect(await service.resolveUpNodeId(c.id)).toBe(a.id);
 
-    // 「新开始」同样按分叉点处理
-    const { node: s1 } = await service.createNewStart(n1.id, { name: "新开始" });
-    const { node: s2 } = await service.addChild(s1.id, { question: "新开始内" });
-    expect(await service.resolveUpNodeId(s2.id)).toBe(n1.id);
+    // 嵌套：分支内再分叉，则回到内层分叉点
+    const { node: inner } = await service.createBranch(b.id, { name: "内层分支" });
+    const { node: innerChild } = await service.addChild(inner.id, { question: "内层继续" });
+    expect(await service.resolveUpNodeId(innerChild.id)).toBe(b.id);
   });
 
   it("getContextPath 返回问答消息序列", async () => {

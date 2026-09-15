@@ -195,6 +195,26 @@ export class TreeService {
   }
 
   /**
+   * 「上级」跳转目标：回到当前分支**分叉出来的那个节点**。
+   *
+   * 规则：会话（分支 / 新开始 / 合并）起点节点的父节点 = 分叉点；
+   * 因此分支内无论多深，一步就能跳出分支回到分叉处。
+   * - 主链（不属于任何会话）：等价于上一节点
+   * - 起点没有父节点（异常数据）：退化为上一节点
+   */
+  async resolveUpNodeId(nodeId: string): Promise<string | null> {
+    const session = await this.getSessionForNode(nodeId);
+    const anchorId = session?.startNodeId ?? nodeId;
+    const anchorParents = await this.nodes.getParents(anchorId);
+    if (anchorParents.length > 0) return anchorParents[0].id;
+    if (anchorId !== nodeId) {
+      const direct = await this.nodes.getParents(nodeId);
+      return direct[0]?.id ?? null;
+    }
+    return null;
+  }
+
+  /**
    * 上下文链（从根到当前节点的完整消息序列）
    * 合并节点（多父）会综合**所有父链**的消息：递归收集各父链路径，
    * 去重（共享祖先只出现一次），按节点创建时间排序。

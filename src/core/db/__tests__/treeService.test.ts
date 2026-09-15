@@ -77,6 +77,45 @@ describe("TreeService", () => {
     await expect(service.createMerge([a.id])).rejects.toThrow("至少");
   });
 
+  it("resolveUpNodeId：分支内任意深度都回到分叉点（不是上一节点）", async () => {
+    const n1 = await repo.nodes.createNode({ question: "主线1" });
+    const n2 = await repo.nodes.createNode({ question: "主线2" });
+    await repo.nodes.addEdge(n1.id, n2.id);
+
+    // 从 n2 分叉，分支内继续两层
+    const { node: b1 } = await service.createBranch(n2.id, { name: "分支" });
+    const { node: b2 } = await service.addChild(b1.id, { question: "分支内1" });
+    const { node: b3 } = await service.addChild(b2.id, { question: "分支内2" });
+
+    // 分支起点 → 分叉点
+    expect(await service.resolveUpNodeId(b1.id)).toBe(n2.id);
+    // 分支深处 → 依然是分叉点（而不是上一节点 b2）
+    expect(await service.resolveUpNodeId(b3.id)).toBe(n2.id);
+    // 主链不受影响：仍然是上一节点
+    expect(await service.resolveUpNodeId(n2.id)).toBe(n1.id);
+    // 根节点没有上级
+    expect(await service.resolveUpNodeId(n1.id)).toBeNull();
+  });
+
+  it("resolveUpNodeId：嵌套分支逐层回退 + 新开始同样按分叉点处理", async () => {
+    const n1 = await repo.nodes.createNode({ question: "主线" });
+    const { node: b1 } = await service.createBranch(n1.id, { name: "分支A" });
+    const { node: b1c } = await service.addChild(b1.id, { question: "A 内" });
+    // 在分支 A 内部再分叉出分支 B
+    const { node: b2 } = await service.createBranch(b1c.id, { name: "分支B" });
+    const { node: b2c } = await service.addChild(b2.id, { question: "B 内" });
+
+    // 分支 B 内 → 回到 B 的分叉点（分支 A 内的节点）
+    expect(await service.resolveUpNodeId(b2c.id)).toBe(b1c.id);
+    // 分支 A 内 → 回到 A 的分叉点（主线）
+    expect(await service.resolveUpNodeId(b1c.id)).toBe(n1.id);
+
+    // 「新开始」同样按分叉点处理
+    const { node: s1 } = await service.createNewStart(n1.id, { name: "新开始" });
+    const { node: s2 } = await service.addChild(s1.id, { question: "新开始内" });
+    expect(await service.resolveUpNodeId(s2.id)).toBe(n1.id);
+  });
+
   it("getContextPath 返回问答消息序列", async () => {
     const root = await repo.nodes.createNode({
       question: "Q1",

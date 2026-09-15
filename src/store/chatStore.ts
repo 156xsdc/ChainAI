@@ -355,12 +355,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   navigateToParent: async () => {
-    const { repos, currentNodeId } = get();
-    if (!repos || !currentNodeId) return;
-    const parents = await repos.nodes.getParents(currentNodeId);
-    if (parents.length > 0) {
-      await get().navigateTo(parents[0].id);
-    }
+    const { treeService, currentNodeId } = get();
+    if (!treeService || !currentNodeId) return;
+    // 「上级」= 跳出当前分支，回到分叉出来的那个节点（主链时为上一节点）
+    const target = await treeService.resolveUpNodeId(currentNodeId);
+    if (target) await get().navigateTo(target);
   },
 
   sendMessage: async (text, skipAutoBranch) => {

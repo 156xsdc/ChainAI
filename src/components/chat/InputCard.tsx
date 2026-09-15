@@ -182,7 +182,7 @@ export function InputCard() {
             <ToolButton
               icon={<ArrowUp size={13} />}
               label="上级"
-              title="返回上级"
+              title="返回上级（分支内直接回到分叉出来的那个节点）"
               disabled={!hasParent}
               onClick={() => navigateToParent()}
             />

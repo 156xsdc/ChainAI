@@ -204,17 +204,64 @@ export async function initAppDatabase(): Promise<AppRepositories> {
     await migrateLegacyDb(dataDir).catch(() => {});
   }
   const dbPath = dataDir ? `sqlite:${joinPath(dataDir, "chainai.db")}` : "sqlite:chainai.db";
-  const db = await Database.load(dbPath);
+  const db = await loadDatabase(dbPath, dataDir);
   const backend = new TauriSqlBackend(db);
   await initSchema(backend);
   return createRepositories(backend);
 }
 
 /**
+ * 打开数据库；失败时清理"外来 WAL"残留后重试一次。
+ *
+ * 历史事故：安装版的迁移逻辑曾把**另一个数据库**（开发版数据目录）的 `-wal`
+ * 拷进安装目录，SQLite 打开时判定 `database disk image is malformed`，
+ * 表现为启动即「初始化失败」。
+ * `-wal` / `-shm` 是派生文件，删掉后主库仍是最后一次检查点的完整快照，
+ * 因此这里直接清理并重试一次（清理失败或重试仍失败则抛原始错误）。
+ */
+async function loadDatabase(
+  dbPath: string,
+  dataDir: string | null
+): Promise<Database> {
+  try {
+    return await Database.load(dbPath);
+  } catch (err) {
+    if (!dataDir) throw err;
+    const { invoke } = await import("@tauri-apps/api/core");
+    let cleaned = false;
+    for (const name of ["chainai.db-wal", "chainai.db-shm"]) {
+      try {
+        await invoke("delete_file", { path: joinPath(dataDir, name) });
+        cleaned = true;
+      } catch {
+        // 文件本就不存在：忽略
+      }
+    }
+    if (!cleaned) throw err;
+    try {
+      return await Database.load(dbPath);
+    } catch (retryErr) {
+      // 清理派生文件后仍打不开：主库本身已损坏，给出可操作的恢复指引
+      throw new Error(
+        `数据库无法打开：${(retryErr as Error).message}。` +
+          `已自动清理残留的 -wal/-shm 仍未成功。可把安装目录下的 chainai.db 改名留作备份，` +
+          `再从备份目录（backups/）选择最近的自动备份 JSON 在应用内导入恢复。`
+      );
+    }
+  }
+}
+
+/**
  * 一次性迁移：把旧位置（AppData/com.16576.chainai）的数据库复制到新数据目录
- * - 目标已存在则跳过（幂等）
- * - 同时迁移 WAL 文件（未 checkpoint 的数据）
+ * - 只在目标库不存在时才会真正复制（Rust 侧 copy_file 目标已存在则跳过，幂等）
+ * - **只拷主库，绝不单独拷 `-wal` / `-shm`**
  * - 迁移失败静默（不阻断启动，新库从空开始）
+ *
+ * ⚠️ 为什么不能拷 WAL：`-wal` 属于某个具体的数据库文件，它记录的是"那个库"的页。
+ * 把 A 库的 WAL 放到 B 库旁边，SQLite 会在打开时把外来页当成自己的提交帧应用，
+ * 直接判定 `database disk image is malformed`（2026-09 事故：开发版 WAL 被拷进
+ * 安装目录 → 安装版一启动就「初始化失败」）。主库文件本身永远是最后一次检查点的
+ * 一致快照，丢掉未 checkpoint 的少量新数据换取绝对不会开不了库。
  */
 async function migrateLegacyDb(dataDir: string): Promise<void> {
   const { appConfigDir } = await import("@tauri-apps/api/path");
@@ -224,8 +271,4 @@ async function migrateLegacyDb(dataDir: string): Promise<void> {
   const legacyDb = joinPath(legacyDir, "chainai.db");
   const targetDb = joinPath(dataDir, "chainai.db");
   await invoke("copy_file", { src: legacyDb, dst: targetDb });
-  await invoke("copy_file", {
-    src: joinPath(legacyDir, "chainai.db-wal"),
-    dst: joinPath(dataDir, "chainai.db-wal"),
-  }).catch(() => {});
 }

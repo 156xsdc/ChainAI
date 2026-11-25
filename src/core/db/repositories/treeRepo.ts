@@ -82,6 +82,30 @@ export class TreeRepository {
       : null;
   }
 
+  /** 更新树的上下文策略（建树后也能改，不必重建） */
+  async updatePolicy(
+    id: string,
+    patch: { inheritMode?: TreeInheritMode; inheritCount?: number }
+  ): Promise<Tree | null> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (patch.inheritMode !== undefined) {
+      sets.push("inherit_mode = ?");
+      params.push(patch.inheritMode);
+    }
+    if (patch.inheritCount !== undefined) {
+      sets.push("inherit_count = ?");
+      params.push(patch.inheritCount);
+    }
+    if (sets.length === 0) return this.getById(id);
+    params.push(id);
+    await this.db.execute(
+      `UPDATE trees SET ${sets.join(", ")} WHERE id = ?`,
+      params
+    );
+    return this.getById(id);
+  }
+
   async rename(id: string, name: string): Promise<void> {
     await this.db.execute(`UPDATE trees SET name = ? WHERE id = ?`, [name, id]);
   }

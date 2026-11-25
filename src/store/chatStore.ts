@@ -12,9 +12,9 @@ import { providerManager } from "../core/ai/manager";
 import { ChatError } from "../core/ai/errors";
 import type { ChatMessage } from "../core/ai/types";
 import { Typewriter } from "../core/typing/typewriter";
-import { buildContext, type ContextMessage } from "../core/context/builder";
+import { prepareOutgoing } from "../core/context/outgoing";
+import { loadCompressionSettings } from "../core/context/policy";
 import { summarizeGroup } from "../core/context/aiCompressor";
-import { estimateMessagesTokens } from "../core/context/tokenEstimate";
 import { exportAll, importAll } from "../core/importExport/service";
 import {
   exportTreeToMarkdown,
@@ -382,52 +382,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
-    // 解析某节点的有效继承数：分支会话优先 → 树级策略 → 全局默认
-    const resolveInheritCount = async (nid: string): Promise<number> => {
-      const sess = await treeService.getSessionForNode(nid);
-      if (sess?.inheritCount !== undefined && sess?.inheritCount !== null) {
-        return sess.inheritCount;
-      }
-      const tree = currentTreeId
-        ? await repos.trees.getById(currentTreeId)
-        : null;
-      if (tree) {
-        return tree.inheritMode === "all"
-          ? -1
-          : tree.inheritMode === "none"
-            ? 0
-            : tree.inheritCount;
-      }
-      return await repos.settings.get<number>("ai.defaultInheritCount", 5);
-    };
+    // 与真实发送共用同一套上下文逻辑（含压缩预算），避免「预检用原文、发送用压缩」
+    const compression = await loadCompressionSettings(repos);
+    const contextDeps = { repos, treeService, currentTreeId: treeId };
 
     // 上下文超限预检：超出时自动创建分支（继承最近 N 条）继续，避免发出去被模型拒绝
     if (!skipAutoBranch && currentNodeId) {
-      // 按实际继承策略估算（截断到最近 N 条，而非全量路径——避免历史长时误判）
-      const ctxEst = await treeService.getContextPath(currentNodeId);
-      const estCount = await resolveInheritCount(currentNodeId);
-      const estMsgs = ctxEst.map((m) => ({ content: m.content }));
-      const estMsgsTruncated =
-        estCount === undefined || estCount < 0 || estCount === null
-          ? estMsgs
-          : estMsgs.slice(-Math.max(1, estCount));
-      const estTokens = estimateMessagesTokens([
-        ...estMsgsTruncated,
-        { content: trimmed },
-        ...(quote ? [{ content: quote.text }] : []),
-      ]);
+      const pre = await prepareOutgoing(contextDeps, {
+        nodeId: currentNodeId,
+        appendUserMessage: trimmed,
+        quote,
+        compression,
+        estimateOnly: true,
+      });
       const contextLimit = await repos.settings.get<number>(
         "ai.contextLimit",
         8000
       );
-      if (estTokens > contextLimit) {
-        const inheritN = await repos.settings.get<number>(
-          "ai.defaultInheritCount",
-          5
-        );
+      if (pre.estimatedTokens > contextLimit) {
+        // 新分支继承条数：沿用当前策略（count 模式用原 N；其余回落到全局默认）
+        const inheritN =
+          pre.policy.mode === "count"
+            ? pre.policy.count
+            : (
+                await repos.settings.get<number>(
+                  "ai.defaultInheritCount",
+                  5
+                )
+              );
         const ok = await confirmDialog({
           title: "上下文超出限制",
-          message: `当前上下文约 ${Math.round(estTokens / 1000)}k tokens，已超过模型上限（${contextLimit} tokens）。\n将创建新分支（继承最近 ${inheritN} 条消息）继续对话。`,
+          message: `当前上下文约 ${Math.round(pre.estimatedTokens / 1000)}k tokens（已按压缩后估算），已超过模型上限（${contextLimit} tokens）。\n将创建新分支（继承最近 ${inheritN} 条消息）继续对话。`,
           confirmText: "创建分支继续",
         });
         if (!ok) return false;
@@ -461,6 +446,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             question: trimmed,
             quote: quote?.text,
           });
+          // 分支自动命名：以分支内第一个问题作为会话名（占位名才改，手动命名不覆盖）
+          const renamed = await treeService.autoNameSessionFromFirstQuestion(
+            nodeId,
+            trimmed
+          );
+          if (renamed) {
+            useGraphStore.getState().bumpGraphVersion();
+          }
         } else {
           // 已有问答：创建子节点继续
           const { node } = await treeService.addChild(nodeId, {
@@ -485,64 +478,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 立即刷新：用户消息显示到聊天区
     await get().refreshPath();
 
-    // 构建上下文：继承模式 + 时间权重压缩
+    // 构建上下文：策略解析 + 时间权重压缩 + 引用注入（统一流水线）
     set({ preparing: true });
-    // 有效继承数：分支会话优先，普通对话用树级策略（固定N条/全部/每轮全新）
-    const inheritCount = await resolveInheritCount(nodeId);
-    const inheritMode =
-      inheritCount < 0 ? "all" : inheritCount === 0 ? "none" : "count";
-    const compressSettings = await repos.settings.get<{
-      enabled?: boolean;
-      recentKeep?: number;
-    }>("ai.contextCompression", { enabled: true, recentKeep: 5 });
-
-    // 合并节点（多父）：每条父链各继承最近 N 条，避免全局截断只剩一条链
-    const parentLinks = await repos.nodes.getParentsWithEdge(nodeId);
-    const isMergeNode = parentLinks.length > 1;
-    const fullCtx = isMergeNode
-      ? await treeService.getMergeContextPath(nodeId, Math.max(1, inheritCount))
-      : await treeService.getContextPath(nodeId);
-    const contextMessages: ContextMessage[] = fullCtx.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    // 压缩摘要需要额外的 AI 调用（历史较长时）
-    const messages: ChatMessage[] = await buildContext(contextMessages, {
-      // 合并节点已按每链截断；传 all 避免全局 slice 二次截断
-      inheritMode: isMergeNode ? "all" : inheritMode,
-      inheritCount,
-      compress: compressSettings.enabled,
-      recentKeep: compressSettings.recentKeep ?? 5,
+    const prepared = await prepareOutgoing(contextDeps, {
+      nodeId,
+      quote,
+      compression,
       compressFn: (group) => summarizeGroup(group, config),
     });
+    const messages: ChatMessage[] = prepared.messages;
 
-    // 新开始/不继承模式：上下文可能为空，至少包含当前问题（API 要求非空消息）
-    if (messages.length === 0) {
-      messages.push({ role: "user", content: trimmed });
-    }
-
-    // 引用：把选中内容及其出处问答注入上下文，替换原问题为带引用的提问
-    if (quote) {
-      // 移除末尾的用户消息（原问题），由引用提问替代
-      while (messages.length > 0 && messages[messages.length - 1].role === "user") {
-        messages.pop();
-      }
-      const quoteNode = await repos.nodes.getNode(quote.nodeId);
-      if (quoteNode?.question) {
-        messages.push({ role: "user", content: quoteNode.question });
-      }
-      if (quoteNode?.answer) {
-        messages.push({ role: "assistant", content: quoteNode.answer });
-      }
-      messages.push({
-        role: "user",
-        content: `【引用内容】\n${quote.text}\n\n请结合以上引用及其出处上下文，回答：${trimmed}`,
-      });
-    }
-
-    // 上下文耗尽提示：估算 token 用量
-    const totalTokens = estimateMessagesTokens(messages);
+    // 上下文耗尽提示：用统一流水线算出的（压缩后）估算，与预检口径一致
+    const totalTokens = prepared.estimatedTokens;
     const contextLimit = await repos.settings.get<number>(
       "ai.contextLimit",
       8000
@@ -950,10 +897,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createTree: async (name, options) => {
     const { repos } = get();
     if (!repos) return "";
+    // 上下文继承统一在「设置 → 上下文继承」里配置：
+    // 新树默认「最近 N 条」，N 取全局默认继承条数（除非显式指定）
+    const defaultCount = await repos.settings.get<number>(
+      "ai.defaultInheritCount",
+      5
+    );
     const tree = await repos.trees.create({
       name: name.trim() || "新树",
-      inheritMode: options?.inheritMode,
-      inheritCount: options?.inheritCount,
+      inheritMode: options?.inheritMode ?? "count",
+      inheritCount: options?.inheritCount ?? defaultCount,
     });
     // 刷新树列表（新建的树要立即出现在菜单中）
     const trees = await repos.trees.list();
@@ -1027,35 +980,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // 上下文：父链 + 当前问题（排除旧回答）
-    const ctx = await treeService.getContextPath(nodeId);
-    const contextMessages: ContextMessage[] = ctx.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-    while (
-      contextMessages.length > 0 &&
-      contextMessages[contextMessages.length - 1].role === "assistant"
-    ) {
-      contextMessages.pop();
-    }
-    const messages: ChatMessage[] = contextMessages;
-    if (messages.length === 0) {
-      messages.push({ role: "user", content: node.question });
-    }
-    // 引用：重新生成时保持引用上下文（引用文本已持久化在节点 quote 列）
-    if (node.quote) {
-      while (
-        messages.length > 0 &&
-        messages[messages.length - 1].role === "user"
-      ) {
-        messages.pop();
+    // 上下文：与首次发送走同一条流水线（继承策略 + 压缩 + 引用），
+    // 仅额外去掉末尾的旧回答
+    const compression = await loadCompressionSettings(repos);
+    const prepared = await prepareOutgoing(
+      { repos, treeService, currentTreeId: get().currentTreeId },
+      {
+        nodeId,
+        dropTrailingAssistant: true,
+        // 引用文本已持久化在节点上（出处节点 id 未存，无法还原问答）
+        quoteText: node.quote || undefined,
+        compression,
+        compressFn: (group) => summarizeGroup(group, config),
       }
-      messages.push({
-        role: "user",
-        content: `【引用内容】\n${node.quote}\n\n请结合以上引用及其出处上下文，回答：${node.question}`,
-      });
-    }
+    );
+    const messages: ChatMessage[] = prepared.messages;
 
     // 流式生成（节流更新）
     const controller = new AbortController();

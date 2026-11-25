@@ -30,22 +30,129 @@ fn copy_file(src: String, dst: String) -> Result<(), String> {
 }
 
 /// 应用数据目录：
-/// - 安装版（release）：可执行文件所在目录（安装路径，数据随程序走）
-/// - 开发版（debug）：系统应用数据目录（避免 cargo clean 误删数据）
+/// - Windows 安装版（release）：可执行文件所在目录（安装路径，数据随程序走）
+/// - 其他情况（macOS/Linux 全部 + 任意平台的 debug）：系统应用数据目录
+///
+/// macOS 特殊说明：`.app` 包内是签名保护区域，安装/升级会整包替换，
+/// 把数据放在 `Contents/MacOS/` 下等于每次升级必丢，因此统一走
+/// `~/Library/Application Support/<identifier>/`。
 #[tauri::command]
 fn app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
-    if cfg!(debug_assertions) {
-        app.path()
-            .app_config_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .map_err(|e| e.to_string())
-    } else {
-        std::env::current_exe()
+    #[cfg(windows)]
+    if !cfg!(debug_assertions) {
+        return std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|d| d.to_path_buf()))
             .map(|d| d.to_string_lossy().to_string())
-            .ok_or_else(|| "无法确定可执行文件目录".to_string())
+            .ok_or_else(|| "无法确定可执行文件目录".to_string());
     }
+    app.path()
+        .app_config_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// 空库体积阈值：只有建表语句、没有任何对话的库约 4KB
+const EMPTY_DB_BYTES: u64 = 12 * 1024;
+
+#[derive(serde::Serialize, Default)]
+struct LegacyDbCandidate {
+    name: String,
+    bytes: u64,
+}
+
+#[derive(serde::Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct LegacyDbMigration {
+    target: String,
+    migrated_from: Option<String>,
+    skipped: Option<String>,
+    candidates: Vec<LegacyDbCandidate>,
+}
+
+fn with_suffix(path: &std::path::Path, suffix: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from(format!("{}{}", path.to_string_lossy(), suffix))
+}
+
+/// 历史遗留数据库整理（幂等，可重复执行）
+///
+/// 背景：早期前端 `joinPath()` 在所有平台都用 `\` 拼接，macOS 上把
+/// `/Applications/x` 拼成 `\Applications\x`（相对路径），于是每个启动位置都会
+/// 生成一个「文件名带反斜杠」的独立数据库。用户感知就是「升级后聊天记录没了」。
+///
+/// 这里把这些散落库统一收敛到 `dir/chainai.db`：挑主库文件最大的那个
+/// （WAL 大小无法区分空库，故只用主库体积排序），复制前先备份到
+/// `dir/legacy-db-backup/`，不删除任何历史文件。
+#[tauri::command]
+fn migrate_legacy_dbs(dir: String) -> Result<LegacyDbMigration, String> {
+    let dir_path = std::path::PathBuf::from(&dir);
+    std::fs::create_dir_all(&dir_path).map_err(|e| e.to_string())?;
+
+    let target = dir_path.join("chainai.db");
+    let mut report = LegacyDbMigration {
+        target: target.to_string_lossy().to_string(),
+        ..Default::default()
+    };
+
+    // 收集候选：文件名含反斜杠的 chainai.db（老 joinPath 在 POSIX 上的产物）
+    let mut candidates: Vec<(String, std::path::PathBuf, u64)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains('\\') && name.ends_with("chainai.db") {
+                let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                candidates.push((name, path, bytes));
+            }
+        }
+    }
+    candidates.sort_by(|a, b| b.2.cmp(&a.2));
+    report.candidates = candidates
+        .iter()
+        .map(|(name, _, bytes)| LegacyDbCandidate {
+            name: name.clone(),
+            bytes: *bytes,
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        return Ok(report);
+    }
+
+    let target_bytes = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
+    if target_bytes > EMPTY_DB_BYTES {
+        report.skipped = Some("目标数据库已有数据，跳过迁移".to_string());
+        return Ok(report);
+    }
+
+    let (best_name, best_path, best_bytes) = &candidates[0];
+    if *best_bytes <= EMPTY_DB_BYTES {
+        report.skipped = Some("历史库均为空库，跳过迁移".to_string());
+        return Ok(report);
+    }
+
+    // 先备份，再落地（幂等：重复执行时目标已有数据会直接跳过）
+    let backup_dir = dir_path.join("legacy-db-backup");
+    std::fs::create_dir_all(&backup_dir).map_err(|e| e.to_string())?;
+    let sanitized = best_name.replace('\\', "_").replace('/', "_");
+    std::fs::copy(best_path, backup_dir.join(&sanitized)).map_err(|e| e.to_string())?;
+    if target.exists() {
+        let _ = std::fs::copy(&target, backup_dir.join("previous-empty-chainai.db"));
+    }
+
+    std::fs::copy(best_path, &target).map_err(|e| e.to_string())?;
+    // 未 checkpoint 的数据在 WAL 里，必须一起搬；旧的 -shm 会干扰 WAL 重放，删掉
+    let src_wal = with_suffix(best_path, "-wal");
+    let _ = std::fs::remove_file(with_suffix(&target, "-shm"));
+    if std::fs::metadata(&src_wal).map(|m| m.len() > 0).unwrap_or(false) {
+        std::fs::copy(&src_wal, with_suffix(&target, "-wal")).map_err(|e| e.to_string())?;
+    }
+
+    report.migrated_from = Some(best_name.clone());
+    Ok(report)
 }
 
 /// 写入文本文件（导出/便签用；自动创建父目录）
@@ -109,7 +216,8 @@ pub fn run() {
             delete_file,
             write_binary_file,
             copy_file,
-            app_data_dir
+            app_data_dir,
+            migrate_legacy_dbs
         ])
         .setup(|app| {
             setup_tray(app)?;

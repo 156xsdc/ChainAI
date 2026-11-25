@@ -5,6 +5,7 @@
  */
 import Database from "@tauri-apps/plugin-sql";
 import { getAppDataDir, joinPath } from "../io/appPaths";
+import { consolidateLegacyDbs } from "../io/legacyMigration";
 import { SCHEMA_SQL } from "./schema";
 import { TauriSqlBackend, type SqlBackend } from "./backend";
 import { NodeRepository } from "./repositories/nodeRepo";
@@ -199,8 +200,11 @@ export function createRepositories(db: SqlBackend): AppRepositories {
  */
 export async function initAppDatabase(): Promise<AppRepositories> {
   const dataDir = await getAppDataDir();
-  // 数据随程序走：安装版首次启动，把旧位置的数据库迁移到安装目录
   if (dataDir) {
+    // 历史脏库收敛：早期路径拼接 bug 在 macOS/Linux 上生成了「文件名带反斜杠」
+    // 的多个独立库，先合并到规范路径 dir/chainai.db（幂等，原件留备份）
+    await consolidateLegacyDbs(dataDir).catch(() => null);
+    // 安装版首次启动，把旧位置的数据库迁移到安装目录（Windows 场景）
     await migrateLegacyDb(dataDir).catch(() => {});
   }
   const dbPath = dataDir ? `sqlite:${joinPath(dataDir, "chainai.db")}` : "sqlite:chainai.db";

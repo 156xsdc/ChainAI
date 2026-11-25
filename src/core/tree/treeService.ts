@@ -16,6 +16,26 @@ import type { Session } from "../db/types";
 
 export type InheritMode = "all" | "count" | "none";
 
+/** 会话占位名：视为「未命名」，可被分支内第一个问题自动替换 */
+const PLACEHOLDER_SESSION_NAMES = new Set([
+  "",
+  "新分支",
+  "新开始",
+  "综合合并",
+  "未命名分支",
+]);
+
+export function isPlaceholderSessionName(
+  name: string | null | undefined
+): boolean {
+  return PLACEHOLDER_SESSION_NAMES.has((name ?? "").trim());
+}
+
+/** 会话名归一化：压平换行/连续空白，截断到 30 字（与创建分支时一致） */
+export function normalizeSessionName(question: string): string {
+  return question.replace(/\s+/g, " ").trim().slice(0, 30);
+}
+
 export interface CreateBranchInput {
   /** 分支名称（会话名） */
   name?: string;
@@ -125,7 +145,9 @@ export class TreeService {
       // 查找父节点所属会话（作为新会话的 parent）
       const parentSession = await this.sessions.getByStartNode(parentNodeId);
       const session = await this.sessions.create({
-        name: input.name ?? (input.question ? input.question.slice(0, 30) : "新分支"),
+        name:
+          input.name ??
+          (normalizeSessionName(input.question ?? "") || "新分支"),
         startNodeId: node.id,
         parentId: parentSession?.id ?? null,
         inheritCount:
@@ -192,6 +214,31 @@ export class TreeService {
       await this.nodes.softDeleteNode(node.id).catch(() => {});
       throw err;
     }
+  }
+
+  /**
+   * 分支自动命名：以分支（会话）内的**第一个问题**作为会话名。
+   *
+   * 场景：分支对话框里不填名称时，会话名是占位名（「新分支」/「综合合并」），
+   * 用户随后在分支里打出第一个问题时，用该问题命名，避免一堆「新分支」。
+   *
+   * 只在会话名仍是占位名时才改名 —— 用户手动命名过就不覆盖。
+   * @returns 是否发生了改名
+   */
+  async autoNameSessionFromFirstQuestion(
+    startNodeId: string,
+    question: string
+  ): Promise<boolean> {
+    const session = await this.sessions.getByStartNode(startNodeId);
+    if (!session) return false;
+    if (!isPlaceholderSessionName(session.name)) return false;
+
+    const name = normalizeSessionName(question);
+    if (!name) return false;
+    if (name === session.name.trim()) return false;
+
+    await this.sessions.update(session.id, { name });
+    return true;
   }
 
   /**

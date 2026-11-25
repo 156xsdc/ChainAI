@@ -144,6 +144,95 @@ describe("TreeService", () => {
     ]);
   });
 
+  describe("autoNameSessionFromFirstQuestion（分支按第一个问题自动命名）", () => {
+    it("占位名（新分支）→ 用分支内第一个问题命名", async () => {
+      const root = await repo.nodes.createNode({ question: "根" });
+      const { node, session } = await service.createBranch(root.id, {
+        inheritMode: "count",
+        inheritCount: 5,
+      });
+      expect(session.name).toBe("新分支");
+
+      // 用户在分支里提出第一个问题
+      await repo.nodes.updateNode(node.id, { question: "缓存穿透怎么解决" });
+      const renamed = await service.autoNameSessionFromFirstQuestion(
+        node.id,
+        "缓存穿透怎么解决"
+      );
+
+      expect(renamed).toBe(true);
+      const after = await repo.sessions.getByStartNode(node.id);
+      expect(after?.name).toBe("缓存穿透怎么解决");
+    });
+
+    it("手动命名过的分支不覆盖", async () => {
+      const root = await repo.nodes.createNode({ question: "根" });
+      const { node } = await service.createBranch(root.id, { name: "我的分支" });
+
+      const renamed = await service.autoNameSessionFromFirstQuestion(
+        node.id,
+        "随便一个问题"
+      );
+
+      expect(renamed).toBe(false);
+      const after = await repo.sessions.getByStartNode(node.id);
+      expect(after?.name).toBe("我的分支");
+    });
+
+    it("空白问题不改名", async () => {
+      const root = await repo.nodes.createNode({ question: "根" });
+      const { node } = await service.createBranch(root.id, {});
+      expect(
+        await service.autoNameSessionFromFirstQuestion(node.id, "   \n  ")
+      ).toBe(false);
+      expect((await repo.sessions.getByStartNode(node.id))?.name).toBe("新分支");
+    });
+
+    it("长问题压平空白并截断到 30 字", async () => {
+      const root = await repo.nodes.createNode({ question: "根" });
+      const { node } = await service.createBranch(root.id, {});
+      const longQ = "第一行\n第二行   " + "长".repeat(60);
+
+      await service.autoNameSessionFromFirstQuestion(node.id, longQ);
+
+      const name = (await repo.sessions.getByStartNode(node.id))?.name ?? "";
+      expect(name.length).toBe(30);
+      expect(name.startsWith("第一行 第二行")).toBe(true);
+      expect(name.includes("\n")).toBe(false);
+    });
+
+    it("新开始 / 合并的占位名同样按第一个问题命名", async () => {
+      const root = await repo.nodes.createNode({ question: "根" });
+      const start = await service.createNewStart(root.id);
+      expect(start.session.name).toBe("新分支");
+      expect(
+        await service.autoNameSessionFromFirstQuestion(start.node.id, "新方向")
+      ).toBe(true);
+      expect((await repo.sessions.getByStartNode(start.node.id))?.name).toBe(
+        "新方向"
+      );
+
+      const a = await repo.nodes.createNode({ question: "A" });
+      const b = await repo.nodes.createNode({ question: "B" });
+      const merged = await service.createMerge([a.id, b.id]);
+      expect(merged.session.name).toBe("综合合并");
+      expect(
+        await service.autoNameSessionFromFirstQuestion(merged.node.id, "综合提问")
+      ).toBe(true);
+      expect((await repo.sessions.getByStartNode(merged.node.id))?.name).toBe(
+        "综合提问"
+      );
+    });
+
+    it("非会话起点节点：不做任何改名", async () => {
+      const root = await repo.nodes.createNode({ question: "根" });
+      const { node } = await service.addChild(root.id, { question: "子问题" });
+      expect(
+        await service.autoNameSessionFromFirstQuestion(node.id, "另一个问题")
+      ).toBe(false);
+    });
+  });
+
   it("合并节点上下文链综合所有父链（getContextPath 多父回溯）", async () => {
     const a = await repo.nodes.createNode({ question: "QA", answer: "AA" });
     const b = await repo.nodes.createNode({ question: "QB", answer: "AB" });

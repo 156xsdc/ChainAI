@@ -1,7 +1,13 @@
 /**
  * 圆角输入卡片：操作栏（分支切换/分叉/上级/新建/设置）+ 输入框 + 发送
  */
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUp,
   ChevronDown,
@@ -16,6 +22,7 @@ import {
 import { useChatStore, type BranchOption } from "../../store/chatStore";
 import { getBranchLabel } from "../../core/tree/branchLabel";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { useImeComposition } from "../../hooks/useImeComposition";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig } from "../../core/ai/types";
 import { BranchDialog } from "../modals/BranchDialog";
@@ -48,6 +55,12 @@ export function InputCard() {
   const [aiConfigs, setAiConfigs] = useState<ProviderConfig[]>([]);
   const activeAi = providerManager.getActiveConfig();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 输入框高度随内容自适应：单行起步 → 随行数增长 → 到上限后内部滚动
+  useAutoGrowTextarea(textareaRef, text);
+
+  // 输入法组字守卫：组字中的回车只确认候选词，不发送
+  const { compositionProps, shouldIgnoreEnter } = useImeComposition();
 
   // AI 配置在 init 时异步加载：repos 就绪后同步一次（避免下拉永远为空）
   useEffect(() => {
@@ -113,6 +126,8 @@ export function InputCard() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
+      // 输入法组字中的回车是「确认候选词」，不能当成发送（否则拼音打到一半就被发出去）
+      if (shouldIgnoreEnter(e)) return;
       e.preventDefault();
       handleSend();
     }
@@ -286,6 +301,7 @@ export function InputCard() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
+              {...compositionProps}
               placeholder={
                 preparing
                   ? "正在压缩上下文..."
@@ -327,6 +343,55 @@ export function InputCard() {
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
+}
+
+/** 输入框最大高度（与 className 的 max-h-40 保持一致：40 * 4px = 160px） */
+const TEXTAREA_MAX_HEIGHT = 160;
+
+/**
+ * 输入框随内容自适应高度：
+ * - 内容少 → 单行（min-h-[38px]）
+ * - 内容多 → 逐行增高，直到 TEXTAREA_MAX_HEIGHT
+ * - 超过上限 → 停在最大高度，内部出现滚动条
+ * - 删字/发送清空后 → 自动缩回
+ *
+ * 容器宽度变化（侧栏开合等）会改变换行行数，用 ResizeObserver 按宽度变化重算；
+ * 只比较宽度，避免「改高度 → 触发 observer → 再改高度」的死循环。
+ */
+function useAutoGrowTextarea(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string
+) {
+  const adjust = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 先把高度复位，才能量出当前内容的真实高度（否则 scrollHeight 会被旧高度撑住）
+    el.style.height = "auto";
+    const needed = el.scrollHeight;
+    el.style.height = `${Math.min(needed, TEXTAREA_MAX_HEIGHT)}px`;
+    // 未超上限时隐藏滚动条，超出后交给内部滚动
+    el.style.overflowY = needed > TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
+  }, [ref]);
+
+  useLayoutEffect(() => {
+    adjust();
+  }, [adjust, value]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const target = el.parentElement ?? el;
+    let lastWidth = target.getBoundingClientRect().width;
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const width = target.getBoundingClientRect().width;
+      if (Math.abs(width - lastWidth) < 0.5) return;
+      lastWidth = width;
+      adjust();
+    });
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [adjust, ref]);
 }
 
 function ToolButton({

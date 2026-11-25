@@ -3,6 +3,7 @@
  */
 import { useEffect, useState } from "react";
 import { Modal } from "./Modal";
+import { useImeComposition } from "../../hooks/useImeComposition";
 
 /** 预设色板：淡色、亮色系（符合"轻"的主旨） */
 export const LIGHT_PRESET_COLORS = [
@@ -36,6 +37,7 @@ export function ColorDialog({
   onConfirm,
 }: ColorDialogProps) {
   const [custom, setCustom] = useState(value || "");
+  const { compositionProps, shouldIgnoreEnter } = useImeComposition();
 
   // 对话框重开/切换目标时同步自定义输入（useState 只在首次挂载初始化）
   useEffect(() => {
@@ -88,8 +90,12 @@ export function ColorDialog({
               placeholder="#A8C8E8 或 rgba(168,200,232,0.5)"
               className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2.5 py-1.5 text-xs outline-none focus:border-neutral-400"
               onKeyDown={(e) => {
-                if (e.key === "Enter" && custom.trim()) apply(custom.trim());
+                if (e.key === "Enter" && custom.trim()) {
+                  if (shouldIgnoreEnter(e)) return;
+                  apply(custom.trim());
+                }
               }}
+              {...compositionProps}
             />
             <button
               className="shrink-0 rounded-lg bg-neutral-800 px-3 py-1.5 text-xs text-white hover:bg-neutral-700"

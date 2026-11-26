@@ -17,7 +17,8 @@ import {
 } from "../../core/ai/configDraft";
 import { useChatStore } from "../../store/chatStore";
 import { chooseDirectory } from "../../core/io/files";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { getAppDataDir } from "../../core/io/appPaths";
 import {
   getAppVersion,
   getLastUpdateResult,
@@ -47,6 +48,7 @@ export function SettingsDialog({
   const importData = useChatStore((s) => s.importData);
   const exportMarkdown = useChatStore((s) => s.exportMarkdown);
   const importMarkdown = useChatStore((s) => s.importMarkdown);
+  const importDeepSeekExport = useChatStore((s) => s.importDeepSeekExport);
   const cleanupNow = useChatStore((s) => s.cleanupNow);
   const backupNow = useChatStore((s) => s.backupNow);
   const [cleanupEnabled, setCleanupEnabled] = useState(true);
@@ -201,6 +203,17 @@ export function SettingsDialog({
           ? Math.max(1, Math.min(100, Math.round(count || 1)))
           : 0,
     });
+  };
+
+  /** 在访达中显示数据目录（数据库 / 备份都在这里） */
+  const openDataDir = async () => {
+    const dir = await getAppDataDir();
+    if (!dir) return;
+    try {
+      await revealItemInDir(dir);
+    } catch {
+      // 失败静默（例如目录不存在）
+    }
   };
 
   /** 手动检查更新 */
@@ -627,6 +640,18 @@ export function SettingsDialog({
             <DataButton icon={<Upload size={12} />} label="导入 JSON 备份" onClick={() => void importData()} />
             <DataButton icon={<Download size={12} />} label="导出 Markdown" onClick={() => void exportMarkdown()} />
             <DataButton icon={<Upload size={12} />} label="导入 Markdown" onClick={() => void importMarkdown()} />
+            <DataButton
+              icon={<Upload size={12} />}
+              label="导入 DeepSeek"
+              title="导入 DeepSeek 导出包：每个会话一棵树，一问一答一个节点"
+              onClick={() => void importDeepSeekExport()}
+            />
+            <DataButton
+              icon={<FolderOpen size={12} />}
+              label="打开数据目录"
+              title="在访达中打开数据库 / 备份所在目录"
+              onClick={() => void openDataDir()}
+            />
           </div>
         </div>
 
@@ -926,14 +951,17 @@ function NumberField({
 function DataButton({
   icon,
   label,
+  title,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  title?: string;
   onClick: () => void;
 }) {
   return (
     <button
+      title={title}
       className="flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 text-xs text-neutral-600 transition-colors hover:bg-neutral-100"
       onClick={onClick}
     >

@@ -126,4 +126,80 @@ describe("收藏/分组/便签/设置仓库", () => {
     await repo.settings.remove("theme");
     expect(await repo.settings.get("theme", "light")).toBe("light");
   });
+
+  it("回收站恢复：所属树已删除 → 用问题新建一棵树挂上去", async () => {
+    // 生产环境的 SQLite 默认不开外键（删树不会级联删节点，会留下孤儿），
+    // 这里对齐生产，否则测试库的 ON DELETE CASCADE 会把节点直接删掉、复现不出问题
+    await repo.backend.execute("PRAGMA foreign_keys = OFF");
+
+    const treeA = await repo.trees.create("待删树");
+    const node = await repo.nodes.createNode({
+      question: "跟我讲讲微囊藻毒素的毒性",
+      treeId: treeA.id,
+    });
+    // 模拟删树：节点软删除 + 进回收站，树行删除
+    await repo.nodes.softDeleteMany([node.id]);
+    await repo.recycleBin.addMany([node.id]);
+    await repo.trees.remove(treeA.id);
+
+    const result = await repo.recycleBin.restore(node.id);
+
+    // 用该节点的问题新建了一棵树（≤20 字，超出加省略号）
+    expect(result.restoredNodes).toBe(1);
+    expect(result.newTrees).toHaveLength(1);
+    expect(result.newTrees[0].name).toBe("跟我讲讲微囊藻毒素的毒性");
+
+    const restored = await repo.nodes.getNode(node.id);
+    expect(restored?.isActive).toBe(true);
+    expect(restored?.treeId).toBe(result.newTrees[0].id);
+    expect((await repo.trees.getById(result.newTrees[0].id))?.name).toBe(
+      "跟我讲讲微囊藻毒素的毒性"
+    );
+  });
+
+  it("恢复新建树时树名去重，空提问回退「恢复的树」", async () => {
+    await repo.backend.execute("PRAGMA foreign_keys = OFF");
+
+    const treeA = await repo.trees.create("旧树");
+    const withQuestion = await repo.nodes.createNode({
+      question: "重复的树名",
+      treeId: treeA.id,
+    });
+    const noQuestion = await repo.nodes.createNode({
+      question: "",
+      treeId: treeA.id,
+    });
+    await repo.nodes.softDeleteMany([withQuestion.id, noQuestion.id]);
+    await repo.recycleBin.addMany([withQuestion.id, noQuestion.id]);
+    await repo.trees.remove(treeA.id);
+    // 已存在同名树 → 新树名要加序号
+    await repo.trees.create("重复的树名");
+
+    const r1 = await repo.recycleBin.restore(withQuestion.id);
+    expect(r1.newTrees[0].name).toBe("重复的树名 (2)");
+
+    const r2 = await repo.recycleBin.restore(noQuestion.id);
+    expect(r2.newTrees[0].name).toBe("恢复的树");
+  });
+
+  it("树分类：批量归类 / 取消分类 / 分类列表", async () => {
+    const a = await repo.trees.create("树A");
+    const b = await repo.trees.create("树B");
+    expect(a.folder).toBe(""); // 默认未分类
+
+    await repo.trees.setFolder([a.id, b.id], "  学术写作  "); // 自动去空白
+    expect((await repo.trees.getById(a.id))?.folder).toBe("学术写作");
+    expect((await repo.trees.getById(b.id))?.folder).toBe("学术写作");
+    expect(await repo.trees.listFolders()).toEqual(["学术写作"]);
+
+    // 取消其中一棵 → 回到未分类，分类列表随之减少
+    await repo.trees.setFolder([b.id], "");
+    expect((await repo.trees.getById(b.id))?.folder).toBe("");
+    expect(await repo.trees.listFolders()).toEqual(["学术写作"]);
+
+    // 归类不影响节点与删除
+    const node = await repo.nodes.createNode({ question: "Q", treeId: a.id });
+    await repo.trees.remove(a.id);
+    expect(await repo.nodes.getNode(node.id)).toBeNull(); // 软删由调用方处理
+  });
 });

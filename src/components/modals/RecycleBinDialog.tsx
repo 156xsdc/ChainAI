@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
+import { useGraphStore } from "../../store/graphStore";
 import { confirmDialog } from "../../store/dialogStore";
 import { Modal } from "../common/Modal";
 
@@ -45,8 +46,20 @@ export function RecycleBinDialog({
 
   const handleRestore = async (nodeId: string) => {
     if (!repos) return;
-    await repos.recycleBin.restore(nodeId);
-    setNotice("♻️ 已恢复分支");
+    const result = await repos.recycleBin.restore(nodeId);
+
+    // 原树已被删除 → restore 会用该节点的问题新建一棵树；刷新树列表并跳过去
+    if (result.newTrees.length > 0) {
+      const trees = await repos.trees.list();
+      useChatStore.setState({ trees });
+      const created = result.newTrees[0];
+      await useChatStore.getState().switchTree(created.id);
+      await useChatStore.getState().navigateTo(nodeId);
+      setNotice(`♻️ 已恢复，并新建树「${created.name}」`);
+    } else {
+      setNotice(`♻️ 已恢复 ${result.restoredNodes} 个节点`);
+      useGraphStore.getState().bumpGraphVersion();
+    }
     void load();
   };
 

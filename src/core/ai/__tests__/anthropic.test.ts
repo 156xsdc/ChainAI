@@ -42,9 +42,16 @@ describe("AnthropicAdapter", () => {
 
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.system).toBe("你是助手");
+    // 现在统一用 content blocks（为多模态预留），相邻同角色合并成多个 text block
     expect(body.messages).toEqual([
-      { role: "user", content: "hi" },
-      { role: "assistant", content: "hello\n\nagain" },
+      { role: "user", content: [{ type: "text", text: "hi" }] },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "hello" },
+          { type: "text", text: "again" },
+        ],
+      },
     ]);
     expect(body.max_tokens).toBe(4096); // 默认值
     expect(body.stream).toBe(true);

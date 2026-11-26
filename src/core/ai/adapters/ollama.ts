@@ -3,6 +3,7 @@
  * 差异点：无认证、NDJSON 流、/api/chat 端点
  */
 import { createLineParser, parseJSONSafe } from "../sse";
+import { hasImages } from "../multimodal";
 import type {
   ChatRequest,
   ChatStreamChunk,
@@ -42,6 +43,12 @@ export class OllamaAdapter extends BaseAdapter {
     request: ChatRequest,
     config: ProviderConfig
   ): AsyncIterable<ChatStreamChunk> {
+    // Ollama 的图片走 messages[].images，尚未接入；明确报错而非静默丢图
+    if (hasImages(request.messages)) {
+      throw new Error(
+        "Ollama 暂不支持图片输入。请切换到支持视觉的配置（Claude / OpenAI 兼容的视觉模型）。"
+      );
+    }
     const body: Record<string, unknown> = {
       model: request.model ?? config.model,
       messages: request.messages,

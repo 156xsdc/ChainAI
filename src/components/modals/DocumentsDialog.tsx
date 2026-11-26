@@ -5,11 +5,12 @@
  * - 删除
  */
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Plus, Trash2 } from "lucide-react";
+import { FileText, Image as ImageIcon, Plus, Trash2 } from "lucide-react";
 import { Modal } from "../common/Modal";
 import { useChatStore } from "../../store/chatStore";
 import { confirmDialog } from "../../store/dialogStore";
 import { buildDocContext, parsePageRange } from "../../core/documents/context";
+import { estimateImageTokens } from "../../core/ai/multimodal";
 import type { DocRef } from "../../core/db";
 
 export function DocumentsDialog({
@@ -23,6 +24,7 @@ export function DocumentsDialog({
   const pendingDocs = useChatStore((s) => s.pendingDocs);
   const loadDocuments = useChatStore((s) => s.loadDocuments);
   const importDocument = useChatStore((s) => s.importDocument);
+  const importImage = useChatStore((s) => s.importImage);
   const deleteDocument = useChatStore((s) => s.deleteDocument);
   const setPendingDocs = useChatStore((s) => s.setPendingDocs);
 
@@ -47,6 +49,13 @@ export function DocumentsDialog({
     let pages = 0;
     for (const doc of documents) {
       if (!selected.has(doc.id)) continue;
+      if (doc.kind === "image") {
+        tokens += estimateImageTokens([
+          { mimeType: doc.mimeType, data: "", width: doc.width, height: doc.height },
+        ]);
+        pages += 1;
+        continue;
+      }
       const block = buildDocContext(doc, ranges[doc.id] ?? "all");
       tokens += block.tokens;
       pages += block.pageCount;
@@ -66,11 +75,22 @@ export function DocumentsDialog({
     const refs: DocRef[] = [];
     for (const doc of documents) {
       if (!selected.has(doc.id)) continue;
+      if (doc.kind === "image") {
+        refs.push({
+          docId: doc.id,
+          name: doc.name,
+          pages: "",
+          kind: "image",
+          thumb: doc.thumb || undefined,
+        });
+        continue;
+      }
       const range = (ranges[doc.id] ?? "all").trim() || "all";
       const picked = parsePageRange(range, doc.pages.length);
       refs.push({
         docId: doc.id,
         name: doc.name,
+        kind: "pdf",
         pages:
           picked.length === doc.pages.length
             ? "all"
@@ -100,12 +120,20 @@ export function DocumentsDialog({
           <span className="text-[11px] text-neutral-400">
             当前树的 PDF 资料（只支持有文字层的 PDF）
           </span>
-          <button
-            onClick={() => void importDocument()}
-            className="flex shrink-0 items-center gap-1 rounded-lg bg-neutral-800 px-2.5 py-1.5 text-[11px] text-white hover:bg-neutral-700"
-          >
-            <Plus size={12} /> 导入 PDF
-          </button>
+          <div className="flex shrink-0 gap-1.5">
+            <button
+              onClick={() => void importDocument()}
+              className="flex items-center gap-1 rounded-lg bg-neutral-800 px-2.5 py-1.5 text-[11px] text-white hover:bg-neutral-700"
+            >
+              <Plus size={12} /> PDF
+            </button>
+            <button
+              onClick={() => void importImage()}
+              className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[11px] text-neutral-600 hover:bg-neutral-100"
+            >
+              <ImageIcon size={12} /> 图片
+            </button>
+          </div>
         </div>
 
         <div className="max-h-[46vh] min-h-[100px] overflow-y-auto rounded-xl border border-neutral-200">
@@ -129,16 +157,26 @@ export function DocumentsDialog({
                   checked={checked}
                   onChange={() => toggle(doc.id)}
                 />
-                <FileText size={13} className="shrink-0 text-neutral-400" />
+                {doc.kind === "image" && doc.thumb ? (
+                  <img
+                    src={doc.thumb}
+                    alt=""
+                    className="h-8 w-8 shrink-0 rounded border border-neutral-200 object-cover"
+                  />
+                ) : (
+                  <FileText size={13} className="shrink-0 text-neutral-400" />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[12px] text-neutral-700">
                     {doc.name}
                   </div>
                   <div className="text-[10px] text-neutral-400">
-                    {doc.pageCount} 页
+                    {doc.kind === "image"
+                      ? `${doc.width}×${doc.height} 图片`
+                      : `${doc.pageCount} 页`}
                   </div>
                 </div>
-                {checked && (
+                {checked && doc.kind !== "image" && (
                   <input
                     value={ranges[doc.id] ?? "all"}
                     onChange={(e) =>

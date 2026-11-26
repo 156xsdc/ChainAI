@@ -128,6 +128,20 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 列已存在
   }
+  // 兼容旧库：documents 表补充图片相关列（kind/mime/尺寸/缩略图）
+  for (const sql of [
+    `ALTER TABLE documents ADD COLUMN kind TEXT NOT NULL DEFAULT 'pdf'`,
+    `ALTER TABLE documents ADD COLUMN mime_type TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE documents ADD COLUMN width INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE documents ADD COLUMN height INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE documents ADD COLUMN thumb TEXT NOT NULL DEFAULT ''`,
+  ]) {
+    try {
+      await db.execute(sql);
+    } catch {
+      // 列已存在
+    }
+  }
   // 兼容旧库：nodes 表补充 doc_refs 列（该消息附带的资料引用）
   try {
     await db.execute(`ALTER TABLE nodes ADD COLUMN doc_refs TEXT NOT NULL DEFAULT '[]'`);

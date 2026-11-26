@@ -24,6 +24,8 @@ import {
 } from "./policy";
 import { estimateMessagesTokens } from "./tokenEstimate";
 import { mergeDocContexts, type DocContextBlock } from "../documents/context";
+import { estimateImageTokens } from "../ai/multimodal";
+import type { ChatImage } from "../ai/types";
 
 export interface QuoteRef {
   nodeId: string;
@@ -47,6 +49,8 @@ export interface PrepareInput {
   compressFn?: (group: ContextMessage[]) => Promise<string>;
   /** 附带资料（已按选页生成好的注入块） */
   documents?: DocContextBlock[];
+  /** 随当前提问一起发送的图片（多模态） */
+  images?: ChatImage[];
   /** 只估算不调 AI（预检） */
   estimateOnly?: boolean;
 }
@@ -160,8 +164,12 @@ export async function prepareOutgoing(
       input.documents && input.documents.length > 0
         ? mergeDocContexts(input.documents).tokens
         : 0;
+    const imageTokens = input.images ? estimateImageTokens(input.images) : 0;
     const baseTokens =
-      plan.estimatedTokens + estimateMessagesTokens(fallback) + docTokens;
+      plan.estimatedTokens +
+      estimateMessagesTokens(fallback) +
+      docTokens +
+      imageTokens;
     const quoteExtra: ContextMessage[] = [];
     if (quoteText) {
       if (quoteNode?.question) {
@@ -194,6 +202,15 @@ export async function prepareOutgoing(
     }
   }
   messages = applyQuote(messages, question, quoteText, quoteNode);
+  // 图片挂在最后一条 user 消息（= 当前提问）上；历史轮次不重复发送
+  if (input.images && input.images.length > 0) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        messages[i] = { ...messages[i], images: input.images };
+        break;
+      }
+    }
+  }
   if (messages.length === 0 && question) {
     messages.push({ role: "user", content: question });
   }

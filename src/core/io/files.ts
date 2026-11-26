@@ -93,6 +93,18 @@ export async function choosePdfFile(): Promise<string | null> {
   return path as string;
 }
 
+/** 选择图片文件（返回路径，取消返回 null） */
+export async function chooseImageFile(): Promise<string | null> {
+  if (!inTauri) return null;
+  const path = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
+  });
+  if (!path || Array.isArray(path)) return null;
+  return path as string;
+}
+
 /** 读取任意二进制文件为 base64（PDF 解析用） */
 export async function readFileBase64(path: string): Promise<string> {
   return await invoke<string>("read_file_base64", { path });

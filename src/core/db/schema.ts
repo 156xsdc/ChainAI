@@ -53,6 +53,11 @@ export const SCHEMA_SQL: string[] = [
     file_path  TEXT NOT NULL DEFAULT '',
     page_count INTEGER NOT NULL DEFAULT 0,
     pages      TEXT NOT NULL DEFAULT '[]',
+    kind       TEXT NOT NULL DEFAULT 'pdf',
+    mime_type  TEXT NOT NULL DEFAULT '',
+    width      INTEGER NOT NULL DEFAULT 0,
+    height     INTEGER NOT NULL DEFAULT 0,
+    thumb      TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
 

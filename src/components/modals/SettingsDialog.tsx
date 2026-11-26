@@ -263,6 +263,7 @@ export function SettingsDialog({
       temperature: fieldEl("temperature")?.value,
       maxTokens: fieldEl("maxTokens")?.value,
       useMaxCompletionTokens: fieldEl("useMaxCompletionTokens")?.checked,
+      supportsVision: fieldEl("supportsVision")?.checked,
     });
 
   /** 写回表单字段（仅用于切换提供商时刷新默认地址/名称） */
@@ -830,6 +831,22 @@ export function SettingsDialog({
                 step={1}
                 min={1}
               />
+              {editing.providerId !== "ollama" && (
+                <Field label="多模态">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
+                    <input
+                      type="checkbox"
+                      className="accent-neutral-800"
+                      data-field="supportsVision"
+                      defaultChecked={
+                        editing.supportsVision ??
+                        editing.providerId === "anthropic"
+                      }
+                    />
+                    支持读图（视觉模型，可附带图片提问）
+                  </label>
+                </Field>
+              )}
               {editing.providerId === "openai" && (
                 <Field label="新模型参数">
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">

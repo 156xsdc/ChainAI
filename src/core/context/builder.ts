@@ -17,10 +17,13 @@
  */
 import { WEIGHT_BANDS, bandLabelForIndex, weightForIndex } from "./weights";
 import { estimateMessagesTokens } from "./tokenEstimate";
+import type { ChatImage } from "../ai/types";
 
 export interface ContextMessage {
   role: "user" | "assistant" | "system";
   content: string;
+  /** 随该消息发送的图片（仅 user 消息，多模态） */
+  images?: ChatImage[];
 }
 
 /** 一个需要摘要的时间权重区间 */

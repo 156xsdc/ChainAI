@@ -55,8 +55,12 @@ export interface TreeNode {
 export interface DocRef {
   docId: string;
   name: string;
-  /** 页码范围文本，如 "1-5" / "3" / "all" */
+  /** 页码范围文本，如 "1-5" / "3" / "all"（图片为空串） */
   pages: string;
+  /** 资料类型：PDF（注入文本）/ 图片（随消息发多模态） */
+  kind?: "pdf" | "image";
+  /** 图片缩略图（data URL，仅图片有，用于消息里显示） */
+  thumb?: string;
 }
 
 /** 文档（树级资料库：已提取文字的 PDF） */
@@ -67,8 +71,17 @@ export interface Document {
   /** 原文件路径（数据目录 attachments/ 下的副本） */
   filePath: string;
   pageCount: number;
-  /** 每页提取的文字 */
+  /** 每页提取的文字（图片为空数组） */
   pages: string[];
+  /** 资料类型：pdf / image */
+  kind: "pdf" | "image";
+  /** 图片 MIME（如 image/jpeg） */
+  mimeType: string;
+  /** 图片尺寸（token 估算用） */
+  width: number;
+  height: number;
+  /** 缩略图 data URL（仅图片） */
+  thumb: string;
   createdAt: string;
 }
 

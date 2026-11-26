@@ -16,6 +16,11 @@ const doc = (pages: string[]): Document => ({
   filePath: "/tmp/x.pdf",
   pageCount: pages.length,
   pages,
+  kind: "pdf",
+  mimeType: "",
+  width: 0,
+  height: 0,
+  thumb: "",
   createdAt: "",
 });
 

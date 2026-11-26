@@ -4,6 +4,7 @@
  * （仅需修改 baseUrl + model）
  */
 import { parseJSONSafe, createSSEParser } from "../sse";
+import { toOpenAiMessages } from "../multimodal";
 import type {
   ChatRequest,
   ChatStreamChunk,
@@ -57,7 +58,7 @@ export class OpenAIAdapter extends BaseAdapter {
   ): AsyncIterable<ChatStreamChunk> {
     const body: Record<string, unknown> = {
       model: request.model ?? config.model,
-      messages: request.messages,
+      messages: toOpenAiMessages(request.messages),
       stream: true,
     };
 

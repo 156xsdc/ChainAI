@@ -28,8 +28,11 @@ import {
   chooseDirectory,
   listDir,
   choosePdfFile,
+  chooseImageFile,
   readFileBase64,
 } from "../core/io/files";
+import { compressImage, guessImageMime } from "../core/images/compress";
+import type { ChatImage } from "../core/ai/types";
 import { extractPdfText } from "../core/pdf/extract";
 import { buildDocContext, type DocContextBlock } from "../core/documents/context";
 import {
@@ -199,6 +202,8 @@ interface ChatState {
   loadDocuments: () => Promise<void>;
   /** 导入 PDF 到当前树资料库（解析文字层） */
   importDocument: () => Promise<void>;
+  /** 导入图片到当前树资料库（压缩后随消息发送） */
+  importImage: () => Promise<void>;
   /** 删除资料（同时删掉数据目录里的副本） */
   deleteDocument: (docId: string) => Promise<void>;
   setPendingDocs: (refs: DocRef[]) => void;
@@ -414,12 +419,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
-    // 附带资料：把待附带的文档按页码范围取文字（同一份数据给预检和真实发送用）
+    // 附带资料：PDF 取文字注入 system，图片按多模态随当前提问发送
     const attachedDocs = get().pendingDocs;
     const docBlocks: DocContextBlock[] = [];
+    const attachedImages: ChatImage[] = [];
+    const enrichedRefs: DocRef[] = [];
     for (const ref of attachedDocs) {
       const doc = await repos.documents.getById(ref.docId);
-      if (doc) docBlocks.push(buildDocContext(doc, ref.pages));
+      if (!doc) continue;
+      if (doc.kind === "image") {
+        try {
+          const b64 = await readFileBase64(doc.filePath);
+          attachedImages.push({
+            mimeType: doc.mimeType || "image/jpeg",
+            data: b64,
+            width: doc.width,
+            height: doc.height,
+          });
+        } catch {
+          // 文件被删/移动：跳过这张，不阻断发送
+        }
+        enrichedRefs.push({
+          docId: ref.docId,
+          name: ref.name,
+          pages: "",
+          kind: "image",
+          thumb: doc.thumb || undefined,
+        });
+      } else {
+        docBlocks.push(buildDocContext(doc, ref.pages));
+        enrichedRefs.push({ ...ref, kind: "pdf" });
+      }
+    }
+    // 图片必须模型支持：不支持时直接拦下，别让模型硬编
+    if (attachedImages.length > 0 && !config.supportsVision) {
+      set({
+        uiError:
+          "当前 AI 配置未开启读图能力。请到 设置 → AI 配置 勾选「支持读图（视觉模型）」，或移除图片后再发送。",
+      });
+      return false;
     }
 
     // 与真实发送共用同一套上下文逻辑（含压缩预算），避免「预检用原文、发送用压缩」
@@ -433,6 +471,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         appendUserMessage: trimmed,
         quote,
         documents: docBlocks,
+        images: attachedImages,
         compression,
         estimateOnly: true,
       });
@@ -512,9 +551,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     // 资料引用持久化到节点（消息流按节点重建，必须落库才能一直显示）
-    if (attachedDocs.length > 0) {
+    if (enrichedRefs.length > 0) {
       await repos.nodes
-        .updateNode(nodeId, { docRefs: attachedDocs })
+        .updateNode(nodeId, { docRefs: enrichedRefs })
         .catch(() => {});
     }
 
@@ -532,6 +571,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       nodeId,
       quote,
       documents: docBlocks,
+      images: attachedImages,
       compression,
       compressFn: (group) => summarizeGroup(group, config),
     });
@@ -888,6 +928,56 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  importImage: async () => {
+    const { repos, currentTreeId } = get();
+    if (!repos || !currentTreeId) return;
+    try {
+      const path = await chooseImageFile();
+      if (!path) return;
+      set({ notice: "🖼️ 正在处理图片…", noticeTone: "info" });
+
+      const base64 = await readFileBase64(path);
+      const compressed = await compressImage(base64, guessImageMime(path));
+
+      // 压缩后的图片写进数据目录（发送时直接读这份，避免每次重压）
+      const fileName = path.split("/").pop() ?? "image.jpg";
+      const dataDir = await getAppDataDir();
+      let storedPath = path;
+      if (dataDir) {
+        const stamp = Date.now();
+        const base = fileName.replace(/\.[^.]+$/, "");
+        storedPath = joinPath(dataDir, "attachments", `${stamp}-${base}.jpg`);
+        try {
+          await invoke("write_binary_file", {
+            path: storedPath,
+            base64Content: compressed.base64,
+          });
+        } catch {
+          storedPath = path;
+        }
+      }
+
+      const doc = await repos.documents.create({
+        treeId: currentTreeId,
+        name: fileName,
+        filePath: storedPath,
+        pages: [],
+        kind: "image",
+        mimeType: compressed.mimeType,
+        width: compressed.width,
+        height: compressed.height,
+        thumb: compressed.thumb,
+      });
+      await get().loadDocuments();
+      set({
+        notice: `🖼️ 已导入「${doc.name}」（${compressed.width}×${compressed.height}）`,
+        noticeTone: "success",
+      });
+    } catch (err) {
+      set({ uiError: `导入图片失败：${(err as Error).message}` });
+    }
+  },
+
   deleteDocument: async (docId) => {
     const { repos, pendingDocs } = get();
     if (!repos) return;
@@ -1152,15 +1242,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 仅额外去掉末尾的旧回答
     const compression = await loadCompressionSettings(repos);
     const regenDocBlocks: DocContextBlock[] = [];
+    const regenImages: ChatImage[] = [];
     for (const ref of node.docRefs ?? []) {
       const doc = await repos.documents.getById(ref.docId);
-      if (doc) regenDocBlocks.push(buildDocContext(doc, ref.pages));
+      if (!doc) continue;
+      if (doc.kind === "image") {
+        try {
+          regenImages.push({
+            mimeType: doc.mimeType || "image/jpeg",
+            data: await readFileBase64(doc.filePath),
+            width: doc.width,
+            height: doc.height,
+          });
+        } catch {
+          // 文件缺失：跳过
+        }
+      } else {
+        regenDocBlocks.push(buildDocContext(doc, ref.pages));
+      }
+    }
+    if (regenImages.length > 0 && !config.supportsVision) {
+      set({
+        uiError:
+          "当前 AI 配置未开启读图能力，无法重新生成带图片的回答。请先在 设置 → AI 配置 勾选「支持读图」。",
+      });
+      return;
     }
     const prepared = await prepareOutgoing(
       { repos, treeService, currentTreeId: get().currentTreeId },
       {
         nodeId,
         documents: regenDocBlocks,
+        images: regenImages,
         dropTrailingAssistant: true,
         // 引用文本已持久化在节点上（出处节点 id 未存，无法还原问答）
         quoteText: node.quote || undefined,

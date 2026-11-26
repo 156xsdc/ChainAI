@@ -81,6 +81,23 @@ export async function listDir(path: string): Promise<DirEntry[]> {
   }
 }
 
+/** 选择 PDF 文件（返回路径，取消返回 null） */
+export async function choosePdfFile(): Promise<string | null> {
+  if (!inTauri) return null;
+  const path = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (!path || Array.isArray(path)) return null;
+  return path as string;
+}
+
+/** 读取任意二进制文件为 base64（PDF 解析用） */
+export async function readFileBase64(path: string): Promise<string> {
+  return await invoke<string>("read_file_base64", { path });
+}
+
 /** 保存 PNG 文件（base64 内容） */
 export async function savePngFile(
   defaultName: string,

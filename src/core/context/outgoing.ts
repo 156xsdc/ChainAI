@@ -23,6 +23,7 @@ import {
   type PolicyDeps,
 } from "./policy";
 import { estimateMessagesTokens } from "./tokenEstimate";
+import { mergeDocContexts, type DocContextBlock } from "../documents/context";
 
 export interface QuoteRef {
   nodeId: string;
@@ -44,6 +45,8 @@ export interface PrepareInput {
   compression?: CompressionSettings;
   /** AI 摘要函数；estimateOnly 时不调用 */
   compressFn?: (group: ContextMessage[]) => Promise<string>;
+  /** 附带资料（已按选页生成好的注入块） */
+  documents?: DocContextBlock[];
   /** 只估算不调 AI（预检） */
   estimateOnly?: boolean;
 }
@@ -152,8 +155,13 @@ export async function prepareOutgoing(
 
   // 预检：只用 plan 的预算推算，不花 AI 调用
   if (input.estimateOnly) {
+    // 附带资料也计入估算（它同样会占用上下文）
+    const docTokens =
+      input.documents && input.documents.length > 0
+        ? mergeDocContexts(input.documents).tokens
+        : 0;
     const baseTokens =
-      plan.estimatedTokens + estimateMessagesTokens(fallback);
+      plan.estimatedTokens + estimateMessagesTokens(fallback) + docTokens;
     const quoteExtra: ContextMessage[] = [];
     if (quoteText) {
       if (quoteNode?.question) {
@@ -178,6 +186,13 @@ export async function prepareOutgoing(
   let messages = await materializeContext(plan, {
     compressFn: input.compressFn,
   });
+  // 附带资料：作为一条 system 消息放在最前面
+  if (input.documents && input.documents.length > 0) {
+    const merged = mergeDocContexts(input.documents);
+    if (merged.text) {
+      messages = [{ role: "system", content: merged.text }, ...messages];
+    }
+  }
   messages = applyQuote(messages, question, quoteText, quoteNode);
   if (messages.length === 0 && question) {
     messages.push({ role: "user", content: question });

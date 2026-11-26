@@ -5,6 +5,7 @@
 import type { SqlBackend } from "../backend";
 import { chunkArr, newId, now, rowToEdge, rowToNode } from "../util";
 import type {
+  DocRef,
   NodeRow,
   NodeType,
   RelationType,
@@ -24,6 +25,8 @@ export interface CreateNodeInput {
   quote?: string;
   /** 模型思考过程 */
   reasoning?: string;
+  /** 该节点附带的资料引用 */
+  docRefs?: DocRef[];
 }
 
 export interface EdgeWithParent extends TreeEdge {
@@ -47,8 +50,8 @@ export class NodeRepository {
     const id = newId();
     const ts = now();
     await this.db.execute(
-      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, quote, reasoning, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?)`,
+      `INSERT INTO nodes (id, tree_id, question, answer, type, summary, color, is_kept, is_favorited, is_active, quote, reasoning, doc_refs, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 1, ?, ?, ?, ?, ?)`,
       [
         id,
         input.treeId ?? null,
@@ -59,6 +62,7 @@ export class NodeRepository {
         input.color ?? "#333333",
         input.quote ?? "",
         input.reasoning ?? "",
+        JSON.stringify(input.docRefs ?? []),
         ts,
         ts,
       ]
@@ -91,6 +95,7 @@ export class NodeRepository {
       answerVersion?: number;
       quote?: string;
       reasoning?: string;
+      docRefs?: DocRef[];
     }
   ): Promise<TreeNode | null> {
     const sets: string[] = [];
@@ -131,6 +136,10 @@ export class NodeRepository {
     if (patch.quote !== undefined) {
       sets.push("quote = ?");
       params.push(patch.quote);
+    }
+    if (patch.docRefs !== undefined) {
+      sets.push("doc_refs = ?");
+      params.push(JSON.stringify(patch.docRefs));
     }
     if (patch.reasoning !== undefined) {
       sets.push("reasoning = ?");

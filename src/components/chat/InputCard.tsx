@@ -11,6 +11,7 @@ import {
 import {
   ArrowUp,
   ChevronDown,
+  Paperclip,
   Plus,
   Quote,
   Send,
@@ -27,6 +28,7 @@ import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig } from "../../core/ai/types";
 import { BranchDialog } from "../modals/BranchDialog";
 import { SettingsDialog } from "../modals/SettingsDialog";
+import { DocumentsDialog } from "../modals/DocumentsDialog";
 
 export function InputCard() {
   const currentNodeId = useChatStore((s) => s.currentNodeId);
@@ -39,6 +41,8 @@ export function InputCard() {
   const navigateTo = useChatStore((s) => s.navigateTo);
   const navigateToParent = useChatStore((s) => s.navigateToParent);
   const quote = useChatStore((s) => s.quote);
+  const pendingDocs = useChatStore((s) => s.pendingDocs);
+  const setPendingDocs = useChatStore((s) => s.setPendingDocs);
   const clearQuote = useChatStore((s) => s.clearQuote);
 
   const [text, setText] = useState("");
@@ -47,6 +51,7 @@ export function InputCard() {
   const branchMenuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false), menuOpen);
   const [branchDialogFor, setBranchDialogFor] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const aiMenuRef = useClickOutside<HTMLDivElement>(
     () => setAiMenuOpen(false),
@@ -202,6 +207,15 @@ export function InputCard() {
               onClick={() => navigateToParent()}
             />
 
+            <ToolButton
+              icon={<Paperclip size={13} />}
+              label={
+                pendingDocs.length > 0 ? `资料 ${pendingDocs.length}` : "资料"
+              }
+              title="附带本树资料库里的 PDF（可按页选择）"
+              onClick={() => setDocsOpen(true)}
+            />
+
             <div className="flex-1" />
 
             {/* AI 快捷切换 */}
@@ -272,6 +286,36 @@ export function InputCard() {
             </button>
           </div>
 
+          {/* 待附带资料：文档 + 页码范围 */}
+          {pendingDocs.length > 0 && (
+            <div className="mx-3 mb-1 flex flex-wrap gap-1.5">
+              {pendingDocs.map((ref) => (
+                <span
+                  key={ref.docId}
+                  className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1 text-[10px] text-neutral-600"
+                  title={`${ref.name}（第 ${ref.pages === "all" ? "全部" : ref.pages} 页）`}
+                >
+                  <Paperclip size={9} className="shrink-0 text-neutral-400" />
+                  <span className="max-w-[160px] truncate">{ref.name}</span>
+                  <span className="text-neutral-400">
+                    {ref.pages === "all" ? "全部" : `p.${ref.pages}`}
+                  </span>
+                  <button
+                    className="rounded p-0.5 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600"
+                    onClick={() =>
+                      setPendingDocs(
+                        pendingDocs.filter((d) => d.docId !== ref.docId)
+                      )
+                    }
+                    title="移除"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* 引用卡片：选中 AI 内容后显示 */}
           {quote && (
             <div className="mx-3 mb-1 flex items-start gap-2 rounded-lg border border-neutral-200 border-l-2 border-l-neutral-400 bg-neutral-50 px-2.5 py-2">
@@ -341,6 +385,7 @@ export function InputCard() {
         onClose={() => setBranchDialogFor(null)}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <DocumentsDialog open={docsOpen} onClose={() => setDocsOpen(false)} />
     </div>
   );
 }

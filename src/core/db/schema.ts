@@ -28,6 +28,7 @@ export const SCHEMA_SQL: string[] = [
     is_active    INTEGER NOT NULL DEFAULT 1,
     quote        TEXT NOT NULL DEFAULT '',
     reasoning    TEXT NOT NULL DEFAULT '',
+    doc_refs     TEXT NOT NULL DEFAULT '[]',
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
@@ -44,6 +45,17 @@ export const SCHEMA_SQL: string[] = [
   )`,
 
   // 边表：DAG 核心，支持多父节点（合并）
+  // 文档（树级资料库：导入的 PDF 提取结果）
+  `CREATE TABLE IF NOT EXISTS documents (
+    id         TEXT PRIMARY KEY,
+    tree_id    TEXT NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    file_path  TEXT NOT NULL DEFAULT '',
+    page_count INTEGER NOT NULL DEFAULT 0,
+    pages      TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+
   `CREATE TABLE IF NOT EXISTS edges (
     id            TEXT PRIMARY KEY,
     parent_id     TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,

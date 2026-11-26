@@ -16,6 +16,15 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// 读取二进制文件（PDF 解析用）：返回 base64，前端转 Uint8Array 交给 pdf.js
+#[tauri::command]
+fn read_file_base64(path: String) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    Ok(STANDARD.encode(bytes))
+}
+
 /// 目录项（批量导入时需要知道有哪些文件）
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -241,6 +250,7 @@ pub fn run() {
             greet,
             read_text_file,
             list_dir,
+            read_file_base64,
             write_text_file,
             append_text_file,
             delete_file,

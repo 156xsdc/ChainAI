@@ -27,7 +27,11 @@ import {
   openTextFile,
   chooseDirectory,
   listDir,
+  choosePdfFile,
+  readFileBase64,
 } from "../core/io/files";
+import { extractPdfText } from "../core/pdf/extract";
+import { buildDocContext, type DocContextBlock } from "../core/documents/context";
 import {
   importDeepSeekSessions,
   parseDeepSeekSession,
@@ -38,7 +42,7 @@ import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
 import { useGraphStore } from "./graphStore";
 import { confirmDialog } from "./dialogStore";
-import type { Note } from "../core/db";
+import type { Document, DocRef, Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
 import { getBranchLabel } from "../core/tree/branchLabel";
 import type { Tree } from "../core/db/repositories/treeRepo";
@@ -58,6 +62,8 @@ export type ChatStreamItem =
       content: string;
       /** 引用的 AI 回答片段（用户消息下展示） */
       quote?: string;
+      /** 该消息附带的资料（用户消息下展示） */
+      docRefs?: DocRef[];
       /** 模型思考过程（AI 消息折叠展示） */
       reasoning?: string;
       /** 是否已收藏（用于消息操作条显示状态） */
@@ -185,6 +191,17 @@ interface ChatState {
   importMarkdown: () => Promise<void>;
   /** 导入 DeepSeek 导出包：一个会话一棵树，一问一答一个节点 */
   importDeepSeekExport: () => Promise<void>;
+  /** 树级资料库（当前树的文档） */
+  documents: Document[];
+  /** 本条消息待附带的资料（文档 + 页码范围） */
+  pendingDocs: DocRef[];
+  /** 重新加载当前树的资料列表 */
+  loadDocuments: () => Promise<void>;
+  /** 导入 PDF 到当前树资料库（解析文字层） */
+  importDocument: () => Promise<void>;
+  /** 删除资料（同时删掉数据目录里的副本） */
+  deleteDocument: (docId: string) => Promise<void>;
+  setPendingDocs: (refs: DocRef[]) => void;
   /** 引用：用户选中的 AI 回答片段（nodeId + 文本），随消息发送 */
   quote: { nodeId: string; text: string } | null;
   setQuote: (quote: { nodeId: string; text: string } | null) => void;
@@ -259,6 +276,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           )
         : null;
       set({ repos, treeService, trees, currentTreeId });
+      if (currentTreeId) void get().loadDocuments();
       if (saved) {
         const node = await repos.nodes.getNode(saved);
         if (node) set({ currentNodeId: node.id });
@@ -311,6 +329,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           nodeId: node.id,
           content: node.question,
           quote: node.quote || undefined,
+          docRefs: node.docRefs?.length ? node.docRefs : undefined,
         });
       }
       const streamed = streamingBuffer[node.id];
@@ -395,6 +414,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
+    // 附带资料：把待附带的文档按页码范围取文字（同一份数据给预检和真实发送用）
+    const attachedDocs = get().pendingDocs;
+    const docBlocks: DocContextBlock[] = [];
+    for (const ref of attachedDocs) {
+      const doc = await repos.documents.getById(ref.docId);
+      if (doc) docBlocks.push(buildDocContext(doc, ref.pages));
+    }
+
     // 与真实发送共用同一套上下文逻辑（含压缩预算），避免「预检用原文、发送用压缩」
     const compression = await loadCompressionSettings(repos);
     const contextDeps = { repos, treeService, currentTreeId: treeId };
@@ -405,6 +432,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         nodeId: currentNodeId,
         appendUserMessage: trimmed,
         quote,
+        documents: docBlocks,
         compression,
         estimateOnly: true,
       });
@@ -483,8 +511,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
+    // 资料引用持久化到节点（消息流按节点重建，必须落库才能一直显示）
+    if (attachedDocs.length > 0) {
+      await repos.nodes
+        .updateNode(nodeId, { docRefs: attachedDocs })
+        .catch(() => {});
+    }
+
     // 发送已受理：立即清除输入框引用（节点已持久化 quote，消息流会显示）
-    set({ quote: null });
+    set({ quote: null, pendingDocs: [] });
 
     await repos.settings.set(`chat.currentNodeId.${treeId}`, nodeId);
 
@@ -496,6 +531,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const prepared = await prepareOutgoing(contextDeps, {
       nodeId,
       quote,
+      documents: docBlocks,
       compression,
       compressFn: (group) => summarizeGroup(group, config),
     });
@@ -785,12 +821,93 @@ export const useChatStore = create<ChatState>((set, get) => ({
   noticeTone: "success",
   notifyTypes: { success: true, info: true },
   notifyDuration: 6,
+  documents: [],
+  pendingDocs: [],
   quote: null,
   noteVersion: 0,
   favVersion: 0,
 
   bumpNoteVersion: () => set((s) => ({ noteVersion: s.noteVersion + 1 })),
   bumpFavVersion: () => set((s) => ({ favVersion: s.favVersion + 1 })),
+  loadDocuments: async () => {
+    const { repos, currentTreeId } = get();
+    if (!repos || !currentTreeId) {
+      set({ documents: [] });
+      return;
+    }
+    const documents = await repos.documents.listByTree(currentTreeId);
+    set({ documents });
+  },
+
+  importDocument: async () => {
+    const { repos, currentTreeId } = get();
+    if (!repos || !currentTreeId) return;
+    try {
+      const path = await choosePdfFile();
+      if (!path) return;
+      set({ notice: "📄 正在解析 PDF…", noticeTone: "info" });
+
+      const base64 = await readFileBase64(path);
+      const result = await extractPdfText(base64);
+      if (result.empty) {
+        set({
+          uiError:
+            "这份 PDF 没有文字层（可能是扫描件/纯图片），暂不支持。请换一份可选中文字的 PDF。",
+        });
+        return;
+      }
+
+      // 原文件复制到数据目录 attachments/（数据自包含，原文件删了也能重解析）
+      const dataDir = await getAppDataDir();
+      const fileName = path.split("/").pop() ?? "document.pdf";
+      let storedPath = path;
+      if (dataDir) {
+        const dir = joinPath(dataDir, "attachments");
+        const stamp = Date.now();
+        storedPath = joinPath(dir, `${stamp}-${fileName}`);
+        try {
+          await invoke("copy_file", { src: path, dst: storedPath });
+        } catch {
+          storedPath = path; // 复制失败就只记原路径，不阻断导入
+        }
+      }
+
+      const doc = await repos.documents.create({
+        treeId: currentTreeId,
+        name: fileName,
+        filePath: storedPath,
+        pages: result.pages,
+      });
+      await get().loadDocuments();
+      set({
+        notice: `📄 已导入「${doc.name}」（${result.pageCount} 页）`,
+        noticeTone: "success",
+      });
+    } catch (err) {
+      set({ uiError: `导入 PDF 失败：${(err as Error).message}` });
+    }
+  },
+
+  deleteDocument: async (docId) => {
+    const { repos, pendingDocs } = get();
+    if (!repos) return;
+    const doc = await repos.documents.getById(docId);
+    await repos.documents.remove(docId);
+    // 删掉数据目录里的副本（失败静默）
+    if (doc?.filePath) {
+      try {
+        await invoke("delete_file", { path: doc.filePath });
+      } catch {
+        // 忽略
+      }
+    }
+    set({ pendingDocs: pendingDocs.filter((d) => d.docId !== docId) });
+    await get().loadDocuments();
+    set({ notice: "🗑️ 已删除资料", noticeTone: "info" });
+  },
+
+  setPendingDocs: (refs) => set({ pendingDocs: refs }),
+
   setQuote: (quote) => set({ quote }),
   clearQuote: () => set({ quote: null }),
   setNotice: (msg, tone = "success") => {
@@ -1012,7 +1129,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       `chat.currentNodeId.${treeId}`,
       null
     );
-    set({ currentTreeId: treeId, currentNodeId: saved });
+    set({ currentTreeId: treeId, currentNodeId: saved, pendingDocs: [] });
+    await get().loadDocuments();
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
     // 切树后把树状图视口聚焦到新树（整树 fitView）
@@ -1033,10 +1151,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // 上下文：与首次发送走同一条流水线（继承策略 + 压缩 + 引用），
     // 仅额外去掉末尾的旧回答
     const compression = await loadCompressionSettings(repos);
+    const regenDocBlocks: DocContextBlock[] = [];
+    for (const ref of node.docRefs ?? []) {
+      const doc = await repos.documents.getById(ref.docId);
+      if (doc) regenDocBlocks.push(buildDocContext(doc, ref.pages));
+    }
     const prepared = await prepareOutgoing(
       { repos, treeService, currentTreeId: get().currentTreeId },
       {
         nodeId,
+        documents: regenDocBlocks,
         dropTrailingAssistant: true,
         // 引用文本已持久化在节点上（出处节点 id 未存，无法还原问答）
         quoteText: node.quote || undefined,

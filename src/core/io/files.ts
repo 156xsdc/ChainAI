@@ -63,6 +63,24 @@ export async function chooseDirectory(): Promise<string | null> {
   return path as string;
 }
 
+/** 目录项 */
+export interface DirEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+}
+
+/** 列出目录内容（批量导入用；非 Tauri 环境返回空数组） */
+export async function listDir(path: string): Promise<DirEntry[]> {
+  if (!inTauri) return [];
+  try {
+    return await invoke<DirEntry[]>("list_dir", { path });
+  } catch {
+    return [];
+  }
+}
+
 /** 保存 PNG 文件（base64 内容） */
 export async function savePngFile(
   defaultName: string,

@@ -16,6 +16,35 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// 目录项（批量导入时需要知道有哪些文件）
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirEntryInfo {
+    name: String,
+    path: String,
+    is_dir: bool,
+    size: u64,
+}
+
+/// 列出目录内容（按名称排序）
+#[tauri::command]
+fn list_dir(path: String) -> Result<Vec<DirEntryInfo>, String> {
+    let iter = std::fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for entry in iter.flatten() {
+        let p = entry.path();
+        let meta = entry.metadata().ok();
+        out.push(DirEntryInfo {
+            name: entry.file_name().to_string_lossy().to_string(),
+            path: p.to_string_lossy().to_string(),
+            is_dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+            size: meta.map(|m| m.len()).unwrap_or(0),
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
 /// 复制文件（一次性数据迁移用；目标已存在则视为成功，幂等）
 #[tauri::command]
 fn copy_file(src: String, dst: String) -> Result<(), String> {
@@ -211,6 +240,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             read_text_file,
+            list_dir,
             write_text_file,
             append_text_file,
             delete_file,

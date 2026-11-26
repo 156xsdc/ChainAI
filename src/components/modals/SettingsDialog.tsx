@@ -17,6 +17,18 @@ import {
 } from "../../core/ai/configDraft";
 import { useChatStore } from "../../store/chatStore";
 import { chooseDirectory } from "../../core/io/files";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { getAppDataDir } from "../../core/io/appPaths";
+import {
+  getAppVersion,
+  getLastUpdateResult,
+  runUpdateCheck,
+} from "../../core/update/service";
+import {
+  RELEASE_PAGE_URL,
+  summarizeNotes,
+  type UpdateCheckResult,
+} from "../../core/update/release";
 import { getNotesDir } from "../../core/notes/noteService";
 import { Modal } from "../common/Modal";
 import { RecycleBinDialog } from "./RecycleBinDialog";
@@ -36,6 +48,7 @@ export function SettingsDialog({
   const importData = useChatStore((s) => s.importData);
   const exportMarkdown = useChatStore((s) => s.exportMarkdown);
   const importMarkdown = useChatStore((s) => s.importMarkdown);
+  const importDeepSeekExport = useChatStore((s) => s.importDeepSeekExport);
   const cleanupNow = useChatStore((s) => s.cleanupNow);
   const backupNow = useChatStore((s) => s.backupNow);
   const [cleanupEnabled, setCleanupEnabled] = useState(true);
@@ -47,6 +60,19 @@ export function SettingsDialog({
   const [notifyInfo, setNotifyInfo] = useState(true);
   const [notesDir, setNotesDir] = useState("");
   const [recycleBinOpen, setRecycleBinOpen] = useState(false);
+  // 上下文继承：全局默认条数 + 当前树策略
+  const [defaultInheritCount, setDefaultInheritCount] = useState(5);
+  const [treeName, setTreeName] = useState("");
+  const [treeMode, setTreeMode] = useState<"count" | "all" | "none">("count");
+  const [treeCount, setTreeCount] = useState(5);
+  const [currentTreeId, setCurrentTreeId] = useState<string | null>(null);
+  // 关于与更新
+  const [appVersion, setAppVersion] = useState("");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(
+    null
+  );
+  const [autoCheckUpdate, setAutoCheckUpdate] = useState(true);
   /** AI 配置编辑表单容器：保存/测试时以 DOM 中的实际输入为准 */
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -94,6 +120,27 @@ export function SettingsDialog({
       // 加载便签存储目录
       const cs = useChatStore.getState();
       if (cs.repos) void getNotesDir(cs.repos).then(setNotesDir);
+      // 加载上下文继承：全局默认 + 当前树策略
+      void cs.repos?.settings
+        .get<number>("ai.defaultInheritCount", 5)
+        .then((v) => setDefaultInheritCount(v ?? 5));
+      setCurrentTreeId(cs.currentTreeId);
+      if (cs.repos && cs.currentTreeId) {
+        void cs.repos.trees.getById(cs.currentTreeId).then((tree) => {
+          if (!tree) return;
+          setTreeName(tree.name);
+          setTreeMode(tree.inheritMode);
+          setTreeCount(tree.inheritCount || 5);
+        });
+      } else {
+        setTreeName("");
+      }
+      // 关于与更新：版本号 + 上次检查结果（启动时可能已经查过一次）
+      void getAppVersion().then(setAppVersion);
+      setUpdateResult(getLastUpdateResult());
+      void cs.repos?.settings
+        .get<boolean>("update.checkOnStartup", true)
+        .then((v) => setAutoCheckUpdate(v !== false));
     }
   }, [open]);
 
@@ -132,6 +179,60 @@ export function SettingsDialog({
       .repos?.settings.set("backup", { enabled, intervalDays });
   };
 
+  /** 保存全局默认继承条数（分支对话框的初始值） */
+  const saveDefaultInheritCount = (value: number) => {
+    const v = Math.max(1, Math.min(100, Math.round(value || 1)));
+    setDefaultInheritCount(v);
+    useChatStore.getState().repos?.settings.set("ai.defaultInheritCount", v);
+  };
+
+  /** 保存当前树的上下文策略（建树后也能改，不影响已建分支） */
+  const saveTreePolicy = (
+    mode: "count" | "all" | "none",
+    count: number
+  ) => {
+    const cs = useChatStore.getState();
+    setTreeMode(mode);
+    if (mode === "count") setTreeCount(count);
+    const treeId = currentTreeId ?? cs.currentTreeId;
+    if (!cs.repos || !treeId) return;
+    void cs.repos.trees.updatePolicy(treeId, {
+      inheritMode: mode,
+      inheritCount:
+        mode === "count"
+          ? Math.max(1, Math.min(100, Math.round(count || 1)))
+          : 0,
+    });
+  };
+
+  /** 在访达中显示数据目录（数据库 / 备份都在这里） */
+  const openDataDir = async () => {
+    const dir = await getAppDataDir();
+    if (!dir) return;
+    try {
+      await revealItemInDir(dir);
+    } catch {
+      // 失败静默（例如目录不存在）
+    }
+  };
+
+  /** 手动检查更新 */
+  const doCheckUpdate = async () => {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    const result = await runUpdateCheck();
+    setUpdateResult(result);
+    setCheckingUpdate(false);
+  };
+
+  /** 启动时静默检查（不打断，只在有新版时提示一句） */
+  const saveAutoCheckUpdate = (enabled: boolean) => {
+    setAutoCheckUpdate(enabled);
+    useChatStore
+      .getState()
+      .repos?.settings.set("update.checkOnStartup", enabled);
+  };
+
   const persist = async (list: ProviderConfig[]) => {
     providerManager.setConfigs(list);
     await useChatStore.getState().repos?.settings.set("ai.providers", list);
@@ -162,6 +263,7 @@ export function SettingsDialog({
       temperature: fieldEl("temperature")?.value,
       maxTokens: fieldEl("maxTokens")?.value,
       useMaxCompletionTokens: fieldEl("useMaxCompletionTokens")?.checked,
+      supportsVision: fieldEl("supportsVision")?.checked,
     });
 
   /** 写回表单字段（仅用于切换提供商时刷新默认地址/名称） */
@@ -275,6 +377,81 @@ export function SettingsDialog({
               </button>
             </div>
           ))}
+        </div>
+
+        {/* 上下文继承 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 text-xs text-neutral-500">上下文继承</div>
+          <div className="flex flex-col gap-3">
+            {/* 当前树策略 */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-xs text-neutral-700">
+                  当前树策略{treeName ? `（${treeName}）` : "（未选择树）"}
+                </span>
+                {treeMode === "count" && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-[11px] text-neutral-400">最近</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={treeCount}
+                      onChange={(e) =>
+                        saveTreePolicy("count", Number(e.target.value))
+                      }
+                      className="w-14 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-[11px] outline-none focus:border-neutral-400"
+                    />
+                    <span className="text-[11px] text-neutral-400">条</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    { value: "count", label: "最近 N 条" },
+                    { value: "all", label: "全部继承" },
+                    { value: "none", label: "每轮全新" },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.value}
+                    onClick={() => saveTreePolicy(m.value, treeCount)}
+                    className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] transition-colors ${
+                      treeMode === m.value
+                        ? "border-neutral-500 bg-neutral-50 text-neutral-800"
+                        : "border-neutral-200 text-neutral-500 hover:border-neutral-300"
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <div className="text-[10px] leading-relaxed text-neutral-400">
+                对普通对话生效；分支的方向在创建分支时各自选择，建好后不受树策略影响
+              </div>
+            </div>
+
+            {/* 全局默认 */}
+            <div className="flex items-center justify-between gap-3 border-t border-neutral-100 pt-2.5">
+              <div className="min-w-0">
+                <div className="text-xs text-neutral-700">默认继承条数</div>
+                <div className="text-[10px] text-neutral-400">
+                  创建分支时「继承最近 N 条」的初始值；条数按消息计（一问一答 = 2 条）
+                </div>
+              </div>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={defaultInheritCount}
+                onChange={(e) =>
+                  saveDefaultInheritCount(Number(e.target.value))
+                }
+                className="w-14 shrink-0 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-right text-[11px] outline-none focus:border-neutral-400"
+              />
+            </div>
+          </div>
         </div>
 
         {/* 通知设置 */}
@@ -464,6 +641,100 @@ export function SettingsDialog({
             <DataButton icon={<Upload size={12} />} label="导入 JSON 备份" onClick={() => void importData()} />
             <DataButton icon={<Download size={12} />} label="导出 Markdown" onClick={() => void exportMarkdown()} />
             <DataButton icon={<Upload size={12} />} label="导入 Markdown" onClick={() => void importMarkdown()} />
+            <DataButton
+              icon={<Upload size={12} />}
+              label="导入 DeepSeek"
+              title="导入 DeepSeek 导出包：每个会话一棵树，一问一答一个节点"
+              onClick={() => void importDeepSeekExport()}
+            />
+            <DataButton
+              icon={<FolderOpen size={12} />}
+              label="打开数据目录"
+              title="在访达中打开数据库 / 备份所在目录"
+              onClick={() => void openDataDir()}
+            />
+          </div>
+        </div>
+
+        {/* 关于与更新 */}
+        <div className="rounded-xl border border-neutral-200 p-3.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="whitespace-nowrap text-xs text-neutral-500">
+              关于与更新
+            </span>
+            <span className="truncate text-[10px] text-neutral-300">
+              当前版本 {appVersion || "—"}
+            </span>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void doCheckUpdate()}
+                disabled={checkingUpdate}
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-[11px] text-neutral-600 hover:bg-neutral-100 disabled:opacity-50"
+              >
+                <RefreshCw
+                  size={12}
+                  className={checkingUpdate ? "animate-spin" : ""}
+                />
+                {checkingUpdate ? "检查中…" : "检查更新"}
+              </button>
+              <button
+                onClick={() => void openUrl(RELEASE_PAGE_URL)}
+                className="flex shrink-0 items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-[11px] text-neutral-500 hover:bg-neutral-100"
+              >
+                <Download size={12} /> 发布页
+              </button>
+              <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-1.5 text-[10px] text-neutral-400">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-neutral-800"
+                  checked={autoCheckUpdate}
+                  onChange={(e) => saveAutoCheckUpdate(e.target.checked)}
+                />
+                启动时检查
+              </label>
+            </div>
+
+            {updateResult?.error && (
+              <div className="text-[10px] text-neutral-400">
+                {updateResult.error}
+              </div>
+            )}
+            {updateResult && !updateResult.error && !updateResult.hasUpdate && (
+              <div className="text-[10px] text-neutral-400">
+                已是最新版本（{updateResult.latest?.version ?? appVersion}）
+              </div>
+            )}
+            {updateResult?.hasUpdate && updateResult.latest && (
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[11px] font-medium text-neutral-800">
+                    发现新版本 {updateResult.latest.version}
+                  </span>
+                  <button
+                    onClick={() =>
+                      void openUrl(updateResult.latest!.downloadUrl)
+                    }
+                    className="shrink-0 rounded-lg bg-neutral-800 px-2.5 py-1 text-[11px] text-white hover:bg-neutral-700"
+                  >
+                    {updateResult.latest.hasPlatformAsset
+                      ? "下载安装包"
+                      : "打开发布页"}
+                  </button>
+                </div>
+                {updateResult.latest.notes && (
+                  <div className="mt-1.5 line-clamp-6 whitespace-pre-wrap text-[10px] leading-relaxed text-neutral-500">
+                    {summarizeNotes(updateResult.latest.notes)}
+                  </div>
+                )}
+                <div className="mt-1 text-[10px] text-neutral-400">
+                  {updateResult.latest.hasPlatformAsset
+                    ? "下载后拖入「应用程序」覆盖安装，数据不会丢"
+                    : "该版本暂未上传 macOS 安装包，可在发布页查看"}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -560,6 +831,22 @@ export function SettingsDialog({
                 step={1}
                 min={1}
               />
+              {editing.providerId !== "ollama" && (
+                <Field label="多模态">
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
+                    <input
+                      type="checkbox"
+                      className="accent-neutral-800"
+                      data-field="supportsVision"
+                      defaultChecked={
+                        editing.supportsVision ??
+                        editing.providerId === "anthropic"
+                      }
+                    />
+                    支持读图（视觉模型，可附带图片提问）
+                  </label>
+                </Field>
+              )}
               {editing.providerId === "openai" && (
                 <Field label="新模型参数">
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
@@ -681,14 +968,17 @@ function NumberField({
 function DataButton({
   icon,
   label,
+  title,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  title?: string;
   onClick: () => void;
 }) {
   return (
     <button
+      title={title}
       className="flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-neutral-300 text-xs text-neutral-600 transition-colors hover:bg-neutral-100"
       onClick={onClick}
     >

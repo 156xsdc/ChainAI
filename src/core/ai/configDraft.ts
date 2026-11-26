@@ -70,6 +70,8 @@ export function blankConfig(providerId: ProviderId): ProviderConfig {
     temperature: 0.7,
     maxTokens: 2048,
     useMaxCompletionTokens: false,
+    // Claude 默认支持读图；OpenAI 兼容系要看具体模型，默认关掉由用户显式开启
+    supportsVision: providerId === "anthropic",
   };
 }
 
@@ -128,6 +130,7 @@ export interface FormValues {
   temperature?: string;
   maxTokens?: string;
   useMaxCompletionTokens?: boolean;
+  supportsVision?: boolean;
 }
 
 /**
@@ -153,6 +156,9 @@ export function mergeFormValues(
   }
   if (form.useMaxCompletionTokens !== undefined) {
     out.useMaxCompletionTokens = form.useMaxCompletionTokens;
+  }
+  if (form.supportsVision !== undefined) {
+    out.supportsVision = form.supportsVision;
   }
   return out;
 }

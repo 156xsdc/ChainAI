@@ -16,6 +16,28 @@ import { SearchDialog } from "./components/modals/SearchDialog";
 import { ConfirmDialog } from "./components/common/ConfirmDialog";
 import { PromptDialog } from "./components/common/PromptDialog";
 import { TextContextMenu } from "./components/common/TextContextMenu";
+import { runUpdateCheck } from "./core/update/service";
+
+/**
+ * 启动后静默检查更新：不弹窗、不打断，有新版只提示一句
+ * （开关在 设置 → 关于与更新，key = update.checkOnStartup）
+ */
+async function startupUpdateCheck() {
+  const { repos, setNotice } = useChatStore.getState();
+  if (!repos) return;
+  const enabled = await repos.settings.get<boolean>(
+    "update.checkOnStartup",
+    true
+  );
+  if (enabled === false) return;
+  const result = await runUpdateCheck();
+  if (result?.hasUpdate && result.latest) {
+    setNotice(
+      `⬆️ 发现新版本 ${result.latest.version}，可在「设置 → 关于与更新」查看`,
+      "info"
+    );
+  }
+}
 
 export default function App() {
   const init = useChatStore((s) => s.init);
@@ -33,6 +55,11 @@ export default function App() {
 
   useEffect(() => {
     init();
+    // 延迟几秒再查（避开启动时的数据库初始化），失败静默
+    const timer = setTimeout(() => {
+      void startupUpdateCheck();
+    }, 5000);
+    return () => clearTimeout(timer);
   }, [init]);
 
   // 全局快捷键

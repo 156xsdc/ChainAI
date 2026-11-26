@@ -8,6 +8,7 @@ import { useChatStore } from "../../store/chatStore";
 import { useUIStore } from "../../store/uiStore";
 import { Modal } from "../common/Modal";
 import type { TreeNode } from "../../core/db";
+import { useImeComposition } from "../../hooks/useImeComposition";
 
 function snippet(text: string, max = 60): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -54,6 +55,8 @@ export function SearchDialog() {
     setSearchOpen(false);
   };
 
+  const { compositionProps, shouldIgnoreEnter } = useImeComposition();
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -62,6 +65,8 @@ export function SearchDialog() {
       e.preventDefault();
       setActive((i) => Math.max(i - 1, 0));
     } else if (e.key === "Enter" && results[active]) {
+      // 输入法确认候选词的回车不跳转
+      if (shouldIgnoreEnter(e)) return;
       go(results[active].id);
     }
   };
@@ -76,6 +81,7 @@ export function SearchDialog() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
+            {...compositionProps}
             placeholder="搜索对话内容（问题 / 回答 / 摘要）..."
             className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-neutral-300"
           />

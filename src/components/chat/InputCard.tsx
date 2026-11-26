@@ -1,10 +1,17 @@
 /**
  * 圆角输入卡片：操作栏（分支切换/分叉/上级/新建/设置）+ 输入框 + 发送
  */
-import { useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUp,
   ChevronDown,
+  Paperclip,
   Plus,
   Quote,
   Send,
@@ -16,10 +23,12 @@ import {
 import { useChatStore, type BranchOption } from "../../store/chatStore";
 import { getBranchLabel } from "../../core/tree/branchLabel";
 import { useClickOutside } from "../../hooks/useClickOutside";
+import { useImeComposition } from "../../hooks/useImeComposition";
 import { providerManager } from "../../core/ai/manager";
 import type { ProviderConfig } from "../../core/ai/types";
 import { BranchDialog } from "../modals/BranchDialog";
 import { SettingsDialog } from "../modals/SettingsDialog";
+import { DocumentsDialog } from "../modals/DocumentsDialog";
 
 export function InputCard() {
   const currentNodeId = useChatStore((s) => s.currentNodeId);
@@ -32,6 +41,8 @@ export function InputCard() {
   const navigateTo = useChatStore((s) => s.navigateTo);
   const navigateToParent = useChatStore((s) => s.navigateToParent);
   const quote = useChatStore((s) => s.quote);
+  const pendingDocs = useChatStore((s) => s.pendingDocs);
+  const setPendingDocs = useChatStore((s) => s.setPendingDocs);
   const clearQuote = useChatStore((s) => s.clearQuote);
 
   const [text, setText] = useState("");
@@ -40,6 +51,7 @@ export function InputCard() {
   const branchMenuRef = useClickOutside<HTMLDivElement>(() => setMenuOpen(false), menuOpen);
   const [branchDialogFor, setBranchDialogFor] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const aiMenuRef = useClickOutside<HTMLDivElement>(
     () => setAiMenuOpen(false),
@@ -48,6 +60,12 @@ export function InputCard() {
   const [aiConfigs, setAiConfigs] = useState<ProviderConfig[]>([]);
   const activeAi = providerManager.getActiveConfig();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 输入框高度随内容自适应：单行起步 → 随行数增长 → 到上限后内部滚动
+  useAutoGrowTextarea(textareaRef, text);
+
+  // 输入法组字守卫：组字中的回车只确认候选词，不发送
+  const { compositionProps, shouldIgnoreEnter } = useImeComposition();
 
   // AI 配置在 init 时异步加载：repos 就绪后同步一次（避免下拉永远为空）
   useEffect(() => {
@@ -113,6 +131,8 @@ export function InputCard() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
+      // 输入法组字中的回车是「确认候选词」，不能当成发送（否则拼音打到一半就被发出去）
+      if (shouldIgnoreEnter(e)) return;
       e.preventDefault();
       handleSend();
     }
@@ -187,6 +207,15 @@ export function InputCard() {
               onClick={() => navigateToParent()}
             />
 
+            <ToolButton
+              icon={<Paperclip size={13} />}
+              label={
+                pendingDocs.length > 0 ? `资料 ${pendingDocs.length}` : "资料"
+              }
+              title="附带本树资料库里的 PDF（可按页选择）"
+              onClick={() => setDocsOpen(true)}
+            />
+
             <div className="flex-1" />
 
             {/* AI 快捷切换 */}
@@ -257,6 +286,46 @@ export function InputCard() {
             </button>
           </div>
 
+          {/* 待附带资料：文档 + 页码范围 */}
+          {pendingDocs.length > 0 && (
+            <div className="mx-3 mb-1 flex flex-wrap gap-1.5">
+              {pendingDocs.map((ref) => (
+                <span
+                  key={ref.docId}
+                  className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1 text-[10px] text-neutral-600"
+                  title={`${ref.name}（第 ${ref.pages === "all" ? "全部" : ref.pages} 页）`}
+                >
+                  {ref.kind === "image" && ref.thumb ? (
+                    <img
+                      src={ref.thumb}
+                      alt=""
+                      className="h-5 w-5 shrink-0 rounded border border-neutral-200 object-cover"
+                    />
+                  ) : (
+                    <Paperclip size={9} className="shrink-0 text-neutral-400" />
+                  )}
+                  <span className="max-w-[160px] truncate">{ref.name}</span>
+                  {ref.kind !== "image" && (
+                    <span className="text-neutral-400">
+                      {ref.pages === "all" ? "全部" : `p.${ref.pages}`}
+                    </span>
+                  )}
+                  <button
+                    className="rounded p-0.5 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-600"
+                    onClick={() =>
+                      setPendingDocs(
+                        pendingDocs.filter((d) => d.docId !== ref.docId)
+                      )
+                    }
+                    title="移除"
+                  >
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* 引用卡片：选中 AI 内容后显示 */}
           {quote && (
             <div className="mx-3 mb-1 flex items-start gap-2 rounded-lg border border-neutral-200 border-l-2 border-l-neutral-400 bg-neutral-50 px-2.5 py-2">
@@ -286,6 +355,7 @@ export function InputCard() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
+              {...compositionProps}
               placeholder={
                 preparing
                   ? "正在压缩上下文..."
@@ -325,8 +395,58 @@ export function InputCard() {
         onClose={() => setBranchDialogFor(null)}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <DocumentsDialog open={docsOpen} onClose={() => setDocsOpen(false)} />
     </div>
   );
+}
+
+/** 输入框最大高度（与 className 的 max-h-40 保持一致：40 * 4px = 160px） */
+const TEXTAREA_MAX_HEIGHT = 160;
+
+/**
+ * 输入框随内容自适应高度：
+ * - 内容少 → 单行（min-h-[38px]）
+ * - 内容多 → 逐行增高，直到 TEXTAREA_MAX_HEIGHT
+ * - 超过上限 → 停在最大高度，内部出现滚动条
+ * - 删字/发送清空后 → 自动缩回
+ *
+ * 容器宽度变化（侧栏开合等）会改变换行行数，用 ResizeObserver 按宽度变化重算；
+ * 只比较宽度，避免「改高度 → 触发 observer → 再改高度」的死循环。
+ */
+function useAutoGrowTextarea(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string
+) {
+  const adjust = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 先把高度复位，才能量出当前内容的真实高度（否则 scrollHeight 会被旧高度撑住）
+    el.style.height = "auto";
+    const needed = el.scrollHeight;
+    el.style.height = `${Math.min(needed, TEXTAREA_MAX_HEIGHT)}px`;
+    // 未超上限时隐藏滚动条，超出后交给内部滚动
+    el.style.overflowY = needed > TEXTAREA_MAX_HEIGHT ? "auto" : "hidden";
+  }, [ref]);
+
+  useLayoutEffect(() => {
+    adjust();
+  }, [adjust, value]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const target = el.parentElement ?? el;
+    let lastWidth = target.getBoundingClientRect().width;
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const width = target.getBoundingClientRect().width;
+      if (Math.abs(width - lastWidth) < 0.5) return;
+      lastWidth = width;
+      adjust();
+    });
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [adjust, ref]);
 }
 
 function ToolButton({

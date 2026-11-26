@@ -59,7 +59,10 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
   const persistManualPositions = useGraphStore((s) => s.persistManualPositions);
   const loadPositions = useGraphStore((s) => s.loadPositions);
   const bumpGraphVersion = useGraphStore((s) => s.bumpGraphVersion);
+  const treeFocusToken = useGraphStore((s) => s.treeFocusToken);
   const rfRef = useRef<ReactFlowInstance<FlowNode, Edge> | null>(null);
+  /** 已请求聚焦，等新树的数据就绪后执行一次 fitView */
+  const pendingFit = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevCurrent = useRef<string | null>(null);
   const positionsLoaded = useRef(false);
@@ -94,10 +97,31 @@ export function GraphCanvas({ fullscreen = false }: { fullscreen?: boolean }) {
       .catch(() => {});
   }, [repos, loadPositions]);
 
+  // 切换树（switchTree 发的信号）→ 数据就绪后把视口聚焦到新树
+  useEffect(() => {
+    if (treeFocusToken > 0) pendingFit.current = true;
+  }, [treeFocusToken]);
+
+  useEffect(() => {
+    if (!data || !pendingFit.current) return;
+    // 等一帧：确保 React Flow 已应用新节点位置再算视口；
+    // 标记在帧内再清除，这样同一轮里「当前节点居中」的 effect 仍能看到它并跳过
+    const raf = requestAnimationFrame(() => {
+      pendingFit.current = false;
+      rfRef.current?.fitView({ padding: 0.25, duration: 350 });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [data]);
+
   // 当前节点变化 → 画布定位
   useEffect(() => {
     if (!data?.currentId || !data.layout) return;
     if (prevCurrent.current === data.currentId) return;
+    // 刚切换树：交给上面的 fitView，避免"先居中到节点再跳到整树"的抖动
+    if (pendingFit.current) {
+      prevCurrent.current = data.currentId;
+      return;
+    }
     prevCurrent.current = data.currentId;
     // 定位到实际显示位置（手动优先）——避免锁定在自动布局位置上
     const pos = nodePos(data.currentId);

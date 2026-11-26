@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { weightForIndex, bandLabelForIndex } from "../weights";
-import { buildContext, groupByWeight, type ContextMessage } from "../builder";
+import {
+  buildContext,
+  groupByWeight,
+  materializeContext,
+  planContext,
+  type ContextMessage,
+} from "../builder";
 
 const msg = (i: number): ContextMessage => ({
   role: i % 2 === 0 ? "user" : "assistant",
@@ -41,72 +47,153 @@ describe("groupByWeight", () => {
     const groups = groupByWeight(messages);
     // idx：消息0-4→19-15 (0.4)；5-14→14-5 (0.7)；15-19→4-0 (1.0)
     expect(groups.length).toBe(3);
-    expect(groups[0][0].content).toBe("消息0"); // 0.4 中度组
-    expect(groups[1][0].content).toBe("消息5"); // 0.7 轻度组
-    expect(groups[2][0].content).toBe("消息15"); // 1.0 完整组
+    expect(groups[0].messages[0].content).toBe("消息0"); // 0.4 中度组
+    expect(groups[1].messages[0].content).toBe("消息5"); // 0.7 轻度组
+    expect(groups[2].messages[0].content).toBe("消息15"); // 1.0 完整组
+  });
+
+  it("每组都算出「预算 = 原文长度 × 权重」（权重真实生效）", () => {
+    const messages = seq(20);
+    const groups = groupByWeight(messages);
+    for (const g of groups) {
+      expect(g.budgetChars).toBe(Math.round(g.rawChars * g.weight));
+      expect(g.weight).toBeLessThanOrEqual(1);
+    }
+    // 越旧的组权重越小 → 预算/原文比越小
+    const ratios = groups.map((g) => g.budgetChars / g.rawChars);
+    expect(ratios[0]).toBeLessThan(ratios[1]);
+    expect(ratios[1]).toBeLessThan(ratios[2]);
   });
 });
 
-describe("buildContext", () => {
-  it("不继承 → 空", async () => {
-    const r = await buildContext(seq(10), { inheritMode: "none" });
-    expect(r).toEqual([]);
+describe("planContext", () => {
+  it("不继承 → 空计划", () => {
+    const plan = planContext(seq(10), { inheritMode: "none" });
+    expect(plan.recent).toEqual([]);
+    expect(plan.groups).toEqual([]);
+    expect(plan.estimatedTokens).toBe(0);
+    expect(plan.droppedCount).toBe(10);
   });
 
-  it("count 模式：只保留最近 N 条", async () => {
-    const r = await buildContext(seq(10), { inheritMode: "count", inheritCount: 3 });
-    expect(r.map((m) => m.content)).toEqual(["消息7", "消息8", "消息9"]);
+  it("count 模式：只保留最近 N 条并记录丢弃数", () => {
+    const plan = planContext(seq(10), {
+      inheritMode: "count",
+      inheritCount: 3,
+      compress: false,
+    });
+    expect(plan.recent.map((m) => m.content)).toEqual([
+      "消息7",
+      "消息8",
+      "消息9",
+    ]);
+    expect(plan.droppedCount).toBe(7);
+    expect(plan.recentCount).toBe(3);
   });
 
-  it("全部继承且无压缩 → 原文全量", async () => {
-    const r = await buildContext(seq(6), { inheritMode: "all", compress: false });
-    expect(r.map((m) => m.content)).toEqual(seq(6).map((m) => m.content));
+  it("perChain（合并节点）：不做全局二次截断", () => {
+    const plan = planContext(seq(10), {
+      inheritMode: "count",
+      inheritCount: 3,
+      perChain: true,
+      compress: false,
+    });
+    expect(plan.recent).toHaveLength(10);
+    expect(plan.droppedCount).toBe(0);
   });
 
-  it("压缩：旧消息分组摘要 + 最近保留原文，顺序从旧到新", async () => {
-    const messages = seq(12); // 12条
-    const r = await buildContext(messages, {
+  it("压缩后估算 < 原文估算（预检用的就是压缩后的值）", () => {
+    const plan = planContext(seq(40), {
       inheritMode: "all",
       recentKeep: 5,
-      compressFn: async (group) => `摘要(${group[0].content}~${group[group.length - 1].content})`,
     });
-    // 最近5条原文 = 消息7~11；旧消息0~6 的全局 idx = 11..5 → 都在 0.7 区间 → 1组
-    expect(r.length).toBe(6);
-    expect(r[0].content).toContain("【更早对话摘要】摘要(消息0~消息6)");
-    expect(r[1].content).toBe("消息7");
-    expect(r[r.length - 1].content).toBe("消息11");
+    expect(plan.groups.length).toBeGreaterThan(0);
+    expect(plan.estimatedTokens).toBeLessThan(plan.rawTokens);
+    // 最近 5 条完整保留
+    expect(plan.recent.map((m) => m.content)).toEqual([
+      "消息35",
+      "消息36",
+      "消息37",
+      "消息38",
+      "消息39",
+    ]);
   });
 
-  it("消息少于 recentKeep → 不压缩全部原文", async () => {
-    const r = await buildContext(seq(4), {
-      inheritMode: "all",
-      compressFn: async (_g) => "不应调用",
+  it("条数不超过 recentKeep → 不压缩", () => {
+    const plan = planContext(seq(4), { inheritMode: "all" });
+    expect(plan.groups).toEqual([]);
+    expect(plan.recent).toHaveLength(4);
+  });
+});
+
+describe("materializeContext", () => {
+  it("摘要合并成一条 system 消息（不再伪装成用户发言）", async () => {
+    const plan = planContext(seq(12), { inheritMode: "all", recentKeep: 5 });
+    const out = await materializeContext(plan, {
+      compressFn: async (group) => `摘要(${group[0].content})`,
     });
-    expect(r.map((m) => m.content)).toEqual(["消息0", "消息1", "消息2", "消息3"]);
+    const systems = out.filter((m) => m.role === "system");
+    expect(systems).toHaveLength(1);
+    expect(systems[0].content).toContain("【更早对话摘要】");
+    expect(out.filter((m) => m.role === "user").every((m) => !m.content.includes("摘要"))).toBe(true);
+    expect(out[out.length - 1].content).toBe("消息11");
   });
 
-  it("压缩函数失败 → 降级为原文", async () => {
-    const messages = seq(12);
-    const r = await buildContext(messages, {
-      inheritMode: "all",
+  it("摘要超预算被截断到「原文长度 × 权重」", async () => {
+    const plan = planContext(seq(30), { inheritMode: "all", recentKeep: 5 });
+    const group = plan.groups[0];
+    const out = await materializeContext(plan, {
+      compressFn: async () => "很长的摘要".repeat(500),
+    });
+    const block = out[0].content;
+    // 该区间预算内的正文长度不应超过预算（多留一点给标签）
+    expect(block.length).toBeLessThan(group.budgetChars + 80);
+  });
+
+  it("摘要函数失败 → 降级为原文按预算截断（不会整段丢失）", async () => {
+    const plan = planContext(seq(12), { inheritMode: "all", recentKeep: 5 });
+    const out = await materializeContext(plan, {
       compressFn: async () => {
         throw new Error("AI 不可用");
       },
     });
-    expect(r.map((m) => m.content)).toEqual(messages.map((m) => m.content));
+    expect(out[0].role).toBe("system");
+    expect(out[0].content).toContain("消息0"); // 原文兜底
+    expect(out[out.length - 1].content).toBe("消息11");
+  });
+
+  it("没有摘要函数 → 原文按预算截断", async () => {
+    const plan = planContext(seq(12), { inheritMode: "all", recentKeep: 5 });
+    const out = await materializeContext(plan);
+    expect(out[0].role).toBe("system");
+    expect(out).toHaveLength(6); // 1 条摘要 + 5 条原文
+  });
+});
+
+describe("buildContext（兼容入口）", () => {
+  it("全部继承且无压缩 → 原文全量", async () => {
+    const r = await buildContext(seq(6), {
+      inheritMode: "all",
+      compress: false,
+    });
+    expect(r.map((m) => m.content)).toEqual(seq(6).map((m) => m.content));
   });
 
   it("count + 压缩：继承范围内再按权重压缩", async () => {
-    const messages = seq(20);
+    // 用较长的消息内容，让该区间预算超过"值得调 AI"的下限（40 字）
+    const messages: ContextMessage[] = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `第${i}条比较长的消息内容，用来触发摘要预算`,
+    }));
     const r = await buildContext(messages, {
       inheritMode: "count",
-      inheritCount: 12, // 保留消息8~19
+      inheritCount: 12, // 保留第8~19条
       recentKeep: 5,
-      compressFn: async (_g) => `摘要`,
+      compressFn: async () => "摘要",
     });
-    // 消息8~19 中最近5条 = 消息15~19 原文；消息8~14 需压缩（idx 5-11 → 0.7 一组）
-    expect(r[r.length - 1].content).toBe("消息19");
-    expect(r[0].content).toContain("【更早对话摘要】摘要");
-    expect(r[0].content).not.toContain("消息8"); // 摘要替换原文
+    expect(r[r.length - 1].content).toContain("第19条");
+    expect(r[0].role).toBe("system");
+    expect(r[0].content).toContain("摘要");
+    // 被摘要覆盖的原文不再单独出现
+    expect(r[0].content).not.toContain("第8条");
   });
 });

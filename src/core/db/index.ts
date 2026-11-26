@@ -5,6 +5,7 @@
  */
 import Database from "@tauri-apps/plugin-sql";
 import { getAppDataDir, joinPath } from "../io/appPaths";
+import { consolidateLegacyDbs } from "../io/legacyMigration";
 import { SCHEMA_SQL } from "./schema";
 import { TauriSqlBackend, type SqlBackend } from "./backend";
 import { NodeRepository } from "./repositories/nodeRepo";
@@ -16,6 +17,7 @@ import { SettingsRepository } from "./repositories/settingsRepo";
 import { RecycleBinRepository } from "./repositories/recycleBinRepo";
 import { DirectoryRepository } from "./repositories/directoryRepo";
 import { TreeRepository } from "./repositories/treeRepo";
+import { DocumentRepository } from "./repositories/documentRepo";
 import { AnswerVersionRepository } from "./repositories/answerVersionRepo";
 
 export { TauriSqlBackend, withTransaction, type SqlBackend } from "./backend";
@@ -29,6 +31,7 @@ export * from "./repositories/settingsRepo";
 export * from "./repositories/recycleBinRepo";
 export * from "./repositories/directoryRepo";
 export * from "./repositories/treeRepo";
+export * from "./repositories/documentRepo";
 export * from "./repositories/answerVersionRepo";
 
 /** 应用数据仓库集合 */
@@ -43,6 +46,7 @@ export interface AppRepositories {
   recycleBin: RecycleBinRepository;
   directories: DirectoryRepository;
   trees: TreeRepository;
+  documents: DocumentRepository;
   answerVersions: AnswerVersionRepository;
 }
 
@@ -124,6 +128,34 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 列已存在
   }
+  // 兼容旧库：documents 表补充图片相关列（kind/mime/尺寸/缩略图）
+  for (const sql of [
+    `ALTER TABLE documents ADD COLUMN kind TEXT NOT NULL DEFAULT 'pdf'`,
+    `ALTER TABLE documents ADD COLUMN mime_type TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE documents ADD COLUMN width INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE documents ADD COLUMN height INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE documents ADD COLUMN thumb TEXT NOT NULL DEFAULT ''`,
+  ]) {
+    try {
+      await db.execute(sql);
+    } catch {
+      // 列已存在
+    }
+  }
+  // 兼容旧库：nodes 表补充 doc_refs 列（该消息附带的资料引用）
+  try {
+    await db.execute(`ALTER TABLE nodes ADD COLUMN doc_refs TEXT NOT NULL DEFAULT '[]'`);
+  } catch {
+    // 列已存在
+  }
+  // 兼容旧库：trees 表补充 folder 列（分类名，空 = 未分类）
+  try {
+    await db.execute(
+      `ALTER TABLE trees ADD COLUMN folder TEXT NOT NULL DEFAULT ''`
+    );
+  } catch {
+    // 列已存在
+  }
   // 默认树：无树时创建；旧节点归入默认树
   const treeRows = await db.select<{ id: string }>(`SELECT id FROM trees LIMIT 1`);
   if (treeRows.length === 0) {
@@ -188,6 +220,7 @@ export function createRepositories(db: SqlBackend): AppRepositories {
     recycleBin: new RecycleBinRepository(db),
     directories: new DirectoryRepository(db),
     trees: new TreeRepository(db),
+    documents: new DocumentRepository(db),
     answerVersions: new AnswerVersionRepository(db),
   };
 }
@@ -199,8 +232,11 @@ export function createRepositories(db: SqlBackend): AppRepositories {
  */
 export async function initAppDatabase(): Promise<AppRepositories> {
   const dataDir = await getAppDataDir();
-  // 数据随程序走：安装版首次启动，把旧位置的数据库迁移到安装目录
   if (dataDir) {
+    // 历史脏库收敛：早期路径拼接 bug 在 macOS/Linux 上生成了「文件名带反斜杠」
+    // 的多个独立库，先合并到规范路径 dir/chainai.db（幂等，原件留备份）
+    await consolidateLegacyDbs(dataDir).catch(() => null);
+    // 安装版首次启动，把旧位置的数据库迁移到安装目录（Windows 场景）
     await migrateLegacyDb(dataDir).catch(() => {});
   }
   const dbPath = dataDir ? `sqlite:${joinPath(dataDir, "chainai.db")}` : "sqlite:chainai.db";

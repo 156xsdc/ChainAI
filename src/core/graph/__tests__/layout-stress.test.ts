@@ -20,6 +20,7 @@ function node(id: string, createdAt = id): TreeNode {
     isActive: true,
     quote: "",
     reasoning: "",
+    docRefs: [],
     createdAt,
     updatedAt: createdAt,
   };

@@ -63,6 +63,53 @@ export async function chooseDirectory(): Promise<string | null> {
   return path as string;
 }
 
+/** 目录项 */
+export interface DirEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+}
+
+/** 列出目录内容（批量导入用；非 Tauri 环境返回空数组） */
+export async function listDir(path: string): Promise<DirEntry[]> {
+  if (!inTauri) return [];
+  try {
+    return await invoke<DirEntry[]>("list_dir", { path });
+  } catch {
+    return [];
+  }
+}
+
+/** 选择 PDF 文件（返回路径，取消返回 null） */
+export async function choosePdfFile(): Promise<string | null> {
+  if (!inTauri) return null;
+  const path = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (!path || Array.isArray(path)) return null;
+  return path as string;
+}
+
+/** 选择图片文件（返回路径，取消返回 null） */
+export async function chooseImageFile(): Promise<string | null> {
+  if (!inTauri) return null;
+  const path = await open({
+    multiple: false,
+    directory: false,
+    filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp"] }],
+  });
+  if (!path || Array.isArray(path)) return null;
+  return path as string;
+}
+
+/** 读取任意二进制文件为 base64（PDF 解析用） */
+export async function readFileBase64(path: string): Promise<string> {
+  return await invoke<string>("read_file_base64", { path });
+}
+
 /** 保存 PNG 文件（base64 内容） */
 export async function savePngFile(
   defaultName: string,

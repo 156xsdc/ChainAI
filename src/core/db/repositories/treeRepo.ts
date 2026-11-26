@@ -12,6 +12,8 @@ export interface Tree {
   /** 普通对话上下文策略 */
   inheritMode: TreeInheritMode;
   inheritCount: number;
+  /** 分类名（空 = 未分类） */
+  folder: string;
   createdAt: string;
 }
 
@@ -42,44 +44,70 @@ export class TreeRepository {
       name: opts.name ?? "新树",
       inheritMode: mode,
       inheritCount: count,
+      folder: "",
       createdAt: ts,
     };
   }
 
   async list(): Promise<Tree[]> {
-    const rows = await this.db.select<{
-      id: string;
-      name: string;
-      inherit_mode: string;
-      inherit_count: number;
-      created_at: string;
-    }>(`SELECT * FROM trees ORDER BY created_at ASC, rowid ASC`);
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      inheritMode: (r.inherit_mode as TreeInheritMode) || "count",
-      inheritCount: r.inherit_count ?? 5,
-      createdAt: r.created_at,
-    }));
+    const rows = await this.db.select<TreeRowShape>(
+      `SELECT * FROM trees ORDER BY created_at ASC, rowid ASC`
+    );
+    return rows.map(rowToTree);
   }
 
   async getById(id: string): Promise<Tree | null> {
-    const rows = await this.db.select<{
-      id: string;
-      name: string;
-      inherit_mode: string;
-      inherit_count: number;
-      created_at: string;
-    }>(`SELECT * FROM trees WHERE id = ?`, [id]);
-    return rows[0]
-      ? {
-          id: rows[0].id,
-          name: rows[0].name,
-          inheritMode: (rows[0].inherit_mode as TreeInheritMode) || "count",
-          inheritCount: rows[0].inherit_count ?? 5,
-          createdAt: rows[0].created_at,
-        }
-      : null;
+    const rows = await this.db.select<TreeRowShape>(
+      `SELECT * FROM trees WHERE id = ?`,
+      [id]
+    );
+    return rows[0] ? rowToTree(rows[0]) : null;
+  }
+
+  /**
+   * 批量设置分类（folder 为空 = 取消分类，回到「未分类」）
+   * 分类只是树上的一个标签，不影响节点与删除逻辑。
+   */
+  async setFolder(treeIds: string[], folder: string): Promise<void> {
+    if (treeIds.length === 0) return;
+    const value = folder.trim();
+    const ph = treeIds.map(() => "?").join(",");
+    await this.db.execute(
+      `UPDATE trees SET folder = ? WHERE id IN (${ph})`,
+      [value, ...treeIds]
+    );
+  }
+
+  /** 当前全部分类名（去重，排除未分类） */
+  async listFolders(): Promise<string[]> {
+    const rows = await this.db.select<{ folder: string }>(
+      `SELECT DISTINCT folder FROM trees WHERE folder <> '' ORDER BY folder ASC`
+    );
+    return rows.map((r) => r.folder);
+  }
+
+  /** 更新树的上下文策略（建树后也能改，不必重建） */
+  async updatePolicy(
+    id: string,
+    patch: { inheritMode?: TreeInheritMode; inheritCount?: number }
+  ): Promise<Tree | null> {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (patch.inheritMode !== undefined) {
+      sets.push("inherit_mode = ?");
+      params.push(patch.inheritMode);
+    }
+    if (patch.inheritCount !== undefined) {
+      sets.push("inherit_count = ?");
+      params.push(patch.inheritCount);
+    }
+    if (sets.length === 0) return this.getById(id);
+    params.push(id);
+    await this.db.execute(
+      `UPDATE trees SET ${sets.join(", ")} WHERE id = ?`,
+      params
+    );
+    return this.getById(id);
   }
 
   async rename(id: string, name: string): Promise<void> {
@@ -90,4 +118,24 @@ export class TreeRepository {
   async remove(id: string): Promise<void> {
     await this.db.execute(`DELETE FROM trees WHERE id = ?`, [id]);
   }
+}
+
+interface TreeRowShape {
+  id: string;
+  name: string;
+  inherit_mode: string;
+  inherit_count: number;
+  folder?: string | null;
+  created_at: string;
+}
+
+function rowToTree(r: TreeRowShape): Tree {
+  return {
+    id: r.id,
+    name: r.name,
+    inheritMode: (r.inherit_mode as TreeInheritMode) || "count",
+    inheritCount: r.inherit_count ?? 5,
+    folder: r.folder ?? "",
+    createdAt: r.created_at,
+  };
 }

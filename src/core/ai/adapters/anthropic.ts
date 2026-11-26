@@ -3,8 +3,8 @@
  * 差异点：system 单独字段、x-api-key 认证、消息必须 user/assistant 交替、max_tokens 必填
  */
 import { createSSEParser, parseJSONSafe } from "../sse";
+import { toAnthropicPayload } from "../multimodal";
 import type {
-  ChatMessage,
   ChatRequest,
   ChatStreamChunk,
   ModelListResult,
@@ -22,34 +22,6 @@ interface AnthropicSSEPayload {
     stop_reason?: string | null;
   };
   usage?: { input_tokens?: number; output_tokens?: number };
-}
-
-/** 提取 system 消息（多个用换行拼接），并从消息列表中移除 */
-function extractSystem(messages: ChatMessage[]): {
-  system: string;
-  rest: ChatMessage[];
-} {
-  const systemParts: string[] = [];
-  const rest: ChatMessage[] = [];
-  for (const m of messages) {
-    if (m.role === "system") systemParts.push(m.content);
-    else rest.push(m);
-  }
-  return { system: systemParts.join("\n\n"), rest };
-}
-
-/** Anthropic 要求 user/assistant 交替，合并连续相同角色 */
-function mergeAdjacentRoles(messages: ChatMessage[]): ChatMessage[] {
-  const result: ChatMessage[] = [];
-  for (const m of messages) {
-    const last = result[result.length - 1];
-    if (last && last.role === m.role) {
-      last.content += "\n\n" + m.content;
-    } else {
-      result.push({ role: m.role, content: m.content });
-    }
-  }
-  return result;
 }
 
 export class AnthropicAdapter extends BaseAdapter {
@@ -77,8 +49,7 @@ export class AnthropicAdapter extends BaseAdapter {
     request: ChatRequest,
     config: ProviderConfig
   ): AsyncIterable<ChatStreamChunk> {
-    const { system, rest } = extractSystem(request.messages);
-    const messages = mergeAdjacentRoles(rest);
+    const { system, messages } = toAnthropicPayload(request.messages);
 
     const body: Record<string, unknown> = {
       model: request.model ?? config.model,

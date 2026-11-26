@@ -39,6 +39,7 @@ export function rowToNode(row: NodeRow): TreeNode {
     answerVersion: row.answer_version ?? 1,
     quote: row.quote ?? "",
     reasoning: row.reasoning ?? "",
+    docRefs: parseDocRefs((row as { doc_refs?: string | null }).doc_refs),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -64,4 +65,22 @@ export function rowToSession(row: SessionRow) {
     createdAt: row.created_at,
     isActive: row.is_active === 1,
   };
+}
+
+/** 解析节点上的资料引用 JSON（容错：脏数据当空数组） */
+function parseDocRefs(raw: string | null | undefined): Array<{ docId: string; name: string; pages: string }> {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((r) => r && typeof r.docId === "string")
+      .map((r) => ({
+        docId: r.docId,
+        name: typeof r.name === "string" ? r.name : "资料",
+        pages: typeof r.pages === "string" ? r.pages : "all",
+      }));
+  } catch {
+    return [];
+  }
 }

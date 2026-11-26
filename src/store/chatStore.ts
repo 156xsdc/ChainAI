@@ -12,9 +12,9 @@ import { providerManager } from "../core/ai/manager";
 import { ChatError } from "../core/ai/errors";
 import type { ChatMessage } from "../core/ai/types";
 import { Typewriter } from "../core/typing/typewriter";
-import { buildContext, type ContextMessage } from "../core/context/builder";
+import { prepareOutgoing } from "../core/context/outgoing";
+import { loadCompressionSettings } from "../core/context/policy";
 import { summarizeGroup } from "../core/context/aiCompressor";
-import { estimateMessagesTokens } from "../core/context/tokenEstimate";
 import { exportAll, importAll } from "../core/importExport/service";
 import {
   exportTreeToMarkdown,
@@ -25,13 +25,27 @@ import {
   openJsonFile,
   saveTextFile,
   openTextFile,
+  chooseDirectory,
+  listDir,
+  choosePdfFile,
+  chooseImageFile,
+  readFileBase64,
 } from "../core/io/files";
+import { compressImage, guessImageMime } from "../core/images/compress";
+import type { ChatImage } from "../core/ai/types";
+import { extractPdfText } from "../core/pdf/extract";
+import { buildDocContext, type DocContextBlock } from "../core/documents/context";
+import {
+  importDeepSeekSessions,
+  parseDeepSeekSession,
+  type DeepSeekSession,
+} from "../core/importExport/deepseek";
 import { createNoteFile } from "../core/notes/noteService";
 import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
 import { useGraphStore } from "./graphStore";
 import { confirmDialog } from "./dialogStore";
-import type { Note } from "../core/db";
+import type { Document, DocRef, Note } from "../core/db";
 import { TreeService } from "../core/tree/treeService";
 import { getBranchLabel } from "../core/tree/branchLabel";
 import type { Tree } from "../core/db/repositories/treeRepo";
@@ -51,6 +65,8 @@ export type ChatStreamItem =
       content: string;
       /** 引用的 AI 回答片段（用户消息下展示） */
       quote?: string;
+      /** 该消息附带的资料（用户消息下展示） */
+      docRefs?: DocRef[];
       /** 模型思考过程（AI 消息折叠展示） */
       reasoning?: string;
       /** 是否已收藏（用于消息操作条显示状态） */
@@ -160,6 +176,10 @@ interface ChatState {
   renameTree: (treeId: string, name: string) => Promise<void>;
   /** 删除树（节点移入回收站） */
   deleteTree: (treeId: string) => Promise<void>;
+  /** 批量删除树（节点软删除并进回收站）；当前树被删时自动切到剩余第一棵 */
+  deleteTrees: (treeIds: string[]) => Promise<void>;
+  /** 批量归类：folder 为空 = 取消分类（回到未分类） */
+  setTreesFolder: (treeIds: string[], folder: string) => Promise<void>;
   /** 切换当前树 */
   switchTree: (treeId: string) => Promise<void>;
   /** 重新生成节点回答（追加新版本，保留历史） */
@@ -172,6 +192,21 @@ interface ChatState {
   exportMarkdown: () => Promise<void>;
   /** 导入 Markdown 文档为树（追加） */
   importMarkdown: () => Promise<void>;
+  /** 导入 DeepSeek 导出包：一个会话一棵树，一问一答一个节点 */
+  importDeepSeekExport: () => Promise<void>;
+  /** 树级资料库（当前树的文档） */
+  documents: Document[];
+  /** 本条消息待附带的资料（文档 + 页码范围） */
+  pendingDocs: DocRef[];
+  /** 重新加载当前树的资料列表 */
+  loadDocuments: () => Promise<void>;
+  /** 导入 PDF 到当前树资料库（解析文字层） */
+  importDocument: () => Promise<void>;
+  /** 导入图片到当前树资料库（压缩后随消息发送） */
+  importImage: () => Promise<void>;
+  /** 删除资料（同时删掉数据目录里的副本） */
+  deleteDocument: (docId: string) => Promise<void>;
+  setPendingDocs: (refs: DocRef[]) => void;
   /** 引用：用户选中的 AI 回答片段（nodeId + 文本），随消息发送 */
   quote: { nodeId: string; text: string } | null;
   setQuote: (quote: { nodeId: string; text: string } | null) => void;
@@ -246,6 +281,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           )
         : null;
       set({ repos, treeService, trees, currentTreeId });
+      if (currentTreeId) void get().loadDocuments();
       if (saved) {
         const node = await repos.nodes.getNode(saved);
         if (node) set({ currentNodeId: node.id });
@@ -298,6 +334,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           nodeId: node.id,
           content: node.question,
           quote: node.quote || undefined,
+          docRefs: node.docRefs?.length ? node.docRefs : undefined,
         });
       }
       const streamed = streamingBuffer[node.id];
@@ -382,52 +419,80 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
-    // 解析某节点的有效继承数：分支会话优先 → 树级策略 → 全局默认
-    const resolveInheritCount = async (nid: string): Promise<number> => {
-      const sess = await treeService.getSessionForNode(nid);
-      if (sess?.inheritCount !== undefined && sess?.inheritCount !== null) {
-        return sess.inheritCount;
+    // 附带资料：PDF 取文字注入 system，图片按多模态随当前提问发送
+    const attachedDocs = get().pendingDocs;
+    const docBlocks: DocContextBlock[] = [];
+    const attachedImages: ChatImage[] = [];
+    const enrichedRefs: DocRef[] = [];
+    for (const ref of attachedDocs) {
+      const doc = await repos.documents.getById(ref.docId);
+      if (!doc) continue;
+      if (doc.kind === "image") {
+        try {
+          const b64 = await readFileBase64(doc.filePath);
+          attachedImages.push({
+            mimeType: doc.mimeType || "image/jpeg",
+            data: b64,
+            width: doc.width,
+            height: doc.height,
+          });
+        } catch {
+          // 文件被删/移动：跳过这张，不阻断发送
+        }
+        enrichedRefs.push({
+          docId: ref.docId,
+          name: ref.name,
+          pages: "",
+          kind: "image",
+          thumb: doc.thumb || undefined,
+        });
+      } else {
+        docBlocks.push(buildDocContext(doc, ref.pages));
+        enrichedRefs.push({ ...ref, kind: "pdf" });
       }
-      const tree = currentTreeId
-        ? await repos.trees.getById(currentTreeId)
-        : null;
-      if (tree) {
-        return tree.inheritMode === "all"
-          ? -1
-          : tree.inheritMode === "none"
-            ? 0
-            : tree.inheritCount;
-      }
-      return await repos.settings.get<number>("ai.defaultInheritCount", 5);
-    };
+    }
+    // 图片必须模型支持：不支持时直接拦下，别让模型硬编
+    if (attachedImages.length > 0 && !config.supportsVision) {
+      set({
+        uiError:
+          "当前 AI 配置未开启读图能力。请到 设置 → AI 配置 勾选「支持读图（视觉模型）」，或移除图片后再发送。",
+      });
+      return false;
+    }
+
+    // 与真实发送共用同一套上下文逻辑（含压缩预算），避免「预检用原文、发送用压缩」
+    const compression = await loadCompressionSettings(repos);
+    const contextDeps = { repos, treeService, currentTreeId: treeId };
 
     // 上下文超限预检：超出时自动创建分支（继承最近 N 条）继续，避免发出去被模型拒绝
     if (!skipAutoBranch && currentNodeId) {
-      // 按实际继承策略估算（截断到最近 N 条，而非全量路径——避免历史长时误判）
-      const ctxEst = await treeService.getContextPath(currentNodeId);
-      const estCount = await resolveInheritCount(currentNodeId);
-      const estMsgs = ctxEst.map((m) => ({ content: m.content }));
-      const estMsgsTruncated =
-        estCount === undefined || estCount < 0 || estCount === null
-          ? estMsgs
-          : estMsgs.slice(-Math.max(1, estCount));
-      const estTokens = estimateMessagesTokens([
-        ...estMsgsTruncated,
-        { content: trimmed },
-        ...(quote ? [{ content: quote.text }] : []),
-      ]);
+      const pre = await prepareOutgoing(contextDeps, {
+        nodeId: currentNodeId,
+        appendUserMessage: trimmed,
+        quote,
+        documents: docBlocks,
+        images: attachedImages,
+        compression,
+        estimateOnly: true,
+      });
       const contextLimit = await repos.settings.get<number>(
         "ai.contextLimit",
         8000
       );
-      if (estTokens > contextLimit) {
-        const inheritN = await repos.settings.get<number>(
-          "ai.defaultInheritCount",
-          5
-        );
+      if (pre.estimatedTokens > contextLimit) {
+        // 新分支继承条数：沿用当前策略（count 模式用原 N；其余回落到全局默认）
+        const inheritN =
+          pre.policy.mode === "count"
+            ? pre.policy.count
+            : (
+                await repos.settings.get<number>(
+                  "ai.defaultInheritCount",
+                  5
+                )
+              );
         const ok = await confirmDialog({
           title: "上下文超出限制",
-          message: `当前上下文约 ${Math.round(estTokens / 1000)}k tokens，已超过模型上限（${contextLimit} tokens）。\n将创建新分支（继承最近 ${inheritN} 条消息）继续对话。`,
+          message: `当前上下文约 ${Math.round(pre.estimatedTokens / 1000)}k tokens（已按压缩后估算），已超过模型上限（${contextLimit} tokens）。\n将创建新分支（继承最近 ${inheritN} 条消息）继续对话。`,
           confirmText: "创建分支继续",
         });
         if (!ok) return false;
@@ -461,6 +526,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
             question: trimmed,
             quote: quote?.text,
           });
+          // 分支自动命名：以分支内第一个问题作为会话名（占位名才改，手动命名不覆盖）
+          const renamed = await treeService.autoNameSessionFromFirstQuestion(
+            nodeId,
+            trimmed
+          );
+          if (renamed) {
+            useGraphStore.getState().bumpGraphVersion();
+          }
         } else {
           // 已有问答：创建子节点继续
           const { node } = await treeService.addChild(nodeId, {
@@ -477,72 +550,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return false;
     }
 
+    // 资料引用持久化到节点（消息流按节点重建，必须落库才能一直显示）
+    if (enrichedRefs.length > 0) {
+      await repos.nodes
+        .updateNode(nodeId, { docRefs: enrichedRefs })
+        .catch(() => {});
+    }
+
     // 发送已受理：立即清除输入框引用（节点已持久化 quote，消息流会显示）
-    set({ quote: null });
+    set({ quote: null, pendingDocs: [] });
 
     await repos.settings.set(`chat.currentNodeId.${treeId}`, nodeId);
 
     // 立即刷新：用户消息显示到聊天区
     await get().refreshPath();
 
-    // 构建上下文：继承模式 + 时间权重压缩
+    // 构建上下文：策略解析 + 时间权重压缩 + 引用注入（统一流水线）
     set({ preparing: true });
-    // 有效继承数：分支会话优先，普通对话用树级策略（固定N条/全部/每轮全新）
-    const inheritCount = await resolveInheritCount(nodeId);
-    const inheritMode =
-      inheritCount < 0 ? "all" : inheritCount === 0 ? "none" : "count";
-    const compressSettings = await repos.settings.get<{
-      enabled?: boolean;
-      recentKeep?: number;
-    }>("ai.contextCompression", { enabled: true, recentKeep: 5 });
-
-    // 合并节点（多父）：每条父链各继承最近 N 条，避免全局截断只剩一条链
-    const parentLinks = await repos.nodes.getParentsWithEdge(nodeId);
-    const isMergeNode = parentLinks.length > 1;
-    const fullCtx = isMergeNode
-      ? await treeService.getMergeContextPath(nodeId, Math.max(1, inheritCount))
-      : await treeService.getContextPath(nodeId);
-    const contextMessages: ContextMessage[] = fullCtx.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    // 压缩摘要需要额外的 AI 调用（历史较长时）
-    const messages: ChatMessage[] = await buildContext(contextMessages, {
-      // 合并节点已按每链截断；传 all 避免全局 slice 二次截断
-      inheritMode: isMergeNode ? "all" : inheritMode,
-      inheritCount,
-      compress: compressSettings.enabled,
-      recentKeep: compressSettings.recentKeep ?? 5,
+    const prepared = await prepareOutgoing(contextDeps, {
+      nodeId,
+      quote,
+      documents: docBlocks,
+      images: attachedImages,
+      compression,
       compressFn: (group) => summarizeGroup(group, config),
     });
+    const messages: ChatMessage[] = prepared.messages;
 
-    // 新开始/不继承模式：上下文可能为空，至少包含当前问题（API 要求非空消息）
-    if (messages.length === 0) {
-      messages.push({ role: "user", content: trimmed });
-    }
-
-    // 引用：把选中内容及其出处问答注入上下文，替换原问题为带引用的提问
-    if (quote) {
-      // 移除末尾的用户消息（原问题），由引用提问替代
-      while (messages.length > 0 && messages[messages.length - 1].role === "user") {
-        messages.pop();
-      }
-      const quoteNode = await repos.nodes.getNode(quote.nodeId);
-      if (quoteNode?.question) {
-        messages.push({ role: "user", content: quoteNode.question });
-      }
-      if (quoteNode?.answer) {
-        messages.push({ role: "assistant", content: quoteNode.answer });
-      }
-      messages.push({
-        role: "user",
-        content: `【引用内容】\n${quote.text}\n\n请结合以上引用及其出处上下文，回答：${trimmed}`,
-      });
-    }
-
-    // 上下文耗尽提示：估算 token 用量
-    const totalTokens = estimateMessagesTokens(messages);
+    // 上下文耗尽提示：用统一流水线算出的（压缩后）估算，与预检口径一致
+    const totalTokens = prepared.estimatedTokens;
     const contextLimit = await repos.settings.get<number>(
       "ai.contextLimit",
       8000
@@ -825,12 +861,143 @@ export const useChatStore = create<ChatState>((set, get) => ({
   noticeTone: "success",
   notifyTypes: { success: true, info: true },
   notifyDuration: 6,
+  documents: [],
+  pendingDocs: [],
   quote: null,
   noteVersion: 0,
   favVersion: 0,
 
   bumpNoteVersion: () => set((s) => ({ noteVersion: s.noteVersion + 1 })),
   bumpFavVersion: () => set((s) => ({ favVersion: s.favVersion + 1 })),
+  loadDocuments: async () => {
+    const { repos, currentTreeId } = get();
+    if (!repos || !currentTreeId) {
+      set({ documents: [] });
+      return;
+    }
+    const documents = await repos.documents.listByTree(currentTreeId);
+    set({ documents });
+  },
+
+  importDocument: async () => {
+    const { repos, currentTreeId } = get();
+    if (!repos || !currentTreeId) return;
+    try {
+      const path = await choosePdfFile();
+      if (!path) return;
+      set({ notice: "📄 正在解析 PDF…", noticeTone: "info" });
+
+      const base64 = await readFileBase64(path);
+      const result = await extractPdfText(base64);
+      if (result.empty) {
+        set({
+          uiError:
+            "这份 PDF 没有文字层（可能是扫描件/纯图片），暂不支持。请换一份可选中文字的 PDF。",
+        });
+        return;
+      }
+
+      // 原文件复制到数据目录 attachments/（数据自包含，原文件删了也能重解析）
+      const dataDir = await getAppDataDir();
+      const fileName = path.split("/").pop() ?? "document.pdf";
+      let storedPath = path;
+      if (dataDir) {
+        const dir = joinPath(dataDir, "attachments");
+        const stamp = Date.now();
+        storedPath = joinPath(dir, `${stamp}-${fileName}`);
+        try {
+          await invoke("copy_file", { src: path, dst: storedPath });
+        } catch {
+          storedPath = path; // 复制失败就只记原路径，不阻断导入
+        }
+      }
+
+      const doc = await repos.documents.create({
+        treeId: currentTreeId,
+        name: fileName,
+        filePath: storedPath,
+        pages: result.pages,
+      });
+      await get().loadDocuments();
+      set({
+        notice: `📄 已导入「${doc.name}」（${result.pageCount} 页）`,
+        noticeTone: "success",
+      });
+    } catch (err) {
+      set({ uiError: `导入 PDF 失败：${(err as Error).message}` });
+    }
+  },
+
+  importImage: async () => {
+    const { repos, currentTreeId } = get();
+    if (!repos || !currentTreeId) return;
+    try {
+      const path = await chooseImageFile();
+      if (!path) return;
+      set({ notice: "🖼️ 正在处理图片…", noticeTone: "info" });
+
+      const base64 = await readFileBase64(path);
+      const compressed = await compressImage(base64, guessImageMime(path));
+
+      // 压缩后的图片写进数据目录（发送时直接读这份，避免每次重压）
+      const fileName = path.split("/").pop() ?? "image.jpg";
+      const dataDir = await getAppDataDir();
+      let storedPath = path;
+      if (dataDir) {
+        const stamp = Date.now();
+        const base = fileName.replace(/\.[^.]+$/, "");
+        storedPath = joinPath(dataDir, "attachments", `${stamp}-${base}.jpg`);
+        try {
+          await invoke("write_binary_file", {
+            path: storedPath,
+            base64Content: compressed.base64,
+          });
+        } catch {
+          storedPath = path;
+        }
+      }
+
+      const doc = await repos.documents.create({
+        treeId: currentTreeId,
+        name: fileName,
+        filePath: storedPath,
+        pages: [],
+        kind: "image",
+        mimeType: compressed.mimeType,
+        width: compressed.width,
+        height: compressed.height,
+        thumb: compressed.thumb,
+      });
+      await get().loadDocuments();
+      set({
+        notice: `🖼️ 已导入「${doc.name}」（${compressed.width}×${compressed.height}）`,
+        noticeTone: "success",
+      });
+    } catch (err) {
+      set({ uiError: `导入图片失败：${(err as Error).message}` });
+    }
+  },
+
+  deleteDocument: async (docId) => {
+    const { repos, pendingDocs } = get();
+    if (!repos) return;
+    const doc = await repos.documents.getById(docId);
+    await repos.documents.remove(docId);
+    // 删掉数据目录里的副本（失败静默）
+    if (doc?.filePath) {
+      try {
+        await invoke("delete_file", { path: doc.filePath });
+      } catch {
+        // 忽略
+      }
+    }
+    set({ pendingDocs: pendingDocs.filter((d) => d.docId !== docId) });
+    await get().loadDocuments();
+    set({ notice: "🗑️ 已删除资料", noticeTone: "info" });
+  },
+
+  setPendingDocs: (refs) => set({ pendingDocs: refs }),
+
   setQuote: (quote) => set({ quote }),
   clearQuote: () => set({ quote: null }),
   setNotice: (msg, tone = "success") => {
@@ -950,10 +1117,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createTree: async (name, options) => {
     const { repos } = get();
     if (!repos) return "";
+    // 上下文继承统一在「设置 → 上下文继承」里配置：
+    // 新树默认「最近 N 条」，N 取全局默认继承条数（除非显式指定）
+    const defaultCount = await repos.settings.get<number>(
+      "ai.defaultInheritCount",
+      5
+    );
     const tree = await repos.trees.create({
       name: name.trim() || "新树",
-      inheritMode: options?.inheritMode,
-      inheritCount: options?.inheritCount,
+      inheritMode: options?.inheritMode ?? "count",
+      inheritCount: options?.inheritCount ?? defaultCount,
     });
     // 刷新树列表（新建的树要立即出现在菜单中）
     const trees = await repos.trees.list();
@@ -975,29 +1148,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteTree: async (treeId) => {
+    await get().deleteTrees([treeId]);
+  },
+
+  setTreesFolder: async (treeIds, folder) => {
     const { repos } = get();
-    if (!repos) return;
-    // 树内节点软删除 + 回收站
-    const nodes = await repos.nodes.getAllActive(treeId);
-    // 批量软删除 + 回收站记录
-    await repos.nodes.softDeleteMany(nodes.map((n) => n.id));
-    await repos.recycleBin.addMany(nodes.map((n) => n.id));
-    // 清理该树的会话（避免孤儿会话残留）
-    await repos.backend.execute(
-      `DELETE FROM sessions WHERE start_node_id IN (SELECT id FROM nodes WHERE tree_id = ?)`,
-      [treeId]
-    );
-    await repos.trees.remove(treeId);
-    // 切到剩余第一棵树（或新建默认树）
+    if (!repos || treeIds.length === 0) return;
+    await repos.trees.setFolder(treeIds, folder);
     const trees = await repos.trees.list();
-    const next =
-      trees[0] ?? (await repos.trees.create("默认树"));
-    await repos.settings.set("chat.currentTreeId", next.id);
-    set({ currentTreeId: next.id, currentNodeId: null, trees });
+    set({ trees });
+    const name = folder.trim();
+    set({
+      notice: name
+        ? `📁 已把 ${treeIds.length} 棵树归到「${name}」`
+        : `📁 已取消 ${treeIds.length} 棵树的分类`,
+      noticeTone: "success",
+    });
+  },
+
+  deleteTrees: async (treeIds) => {
+    const { repos } = get();
+    if (!repos || treeIds.length === 0) return;
+
+    let deletedNodes = 0;
+    let deletedTrees = 0;
+    for (const treeId of treeIds) {
+      // 树内活跃节点：软删除 + 进回收站（可恢复）
+      const nodes = await repos.nodes.getAllActive(treeId);
+      if (nodes.length > 0) {
+        await repos.nodes.softDeleteMany(nodes.map((n) => n.id));
+        await repos.recycleBin.addMany(nodes.map((n) => n.id));
+        deletedNodes += nodes.length;
+      }
+      // 清理该树的会话（避免孤儿会话残留）
+      await repos.backend.execute(
+        `DELETE FROM sessions WHERE start_node_id IN (SELECT id FROM nodes WHERE tree_id = ?)`,
+        [treeId]
+      );
+      await repos.trees.remove(treeId);
+      deletedTrees++;
+    }
+
+    // 当前树被删 → 切到剩余第一棵；一棵都不剩则新建默认树
+    let trees = await repos.trees.list();
+    const cur = get().currentTreeId;
+    if (!cur || !trees.some((t) => t.id === cur)) {
+      if (trees.length === 0) trees = [await repos.trees.create("默认树")];
+      const next = trees[0];
+      await repos.settings.set("chat.currentTreeId", next.id);
+      set({ trees, currentTreeId: next.id, currentNodeId: null });
+    } else {
+      set({ trees });
+    }
+
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
+    useGraphStore.getState().requestTreeFocus();
     set({
-      notice: `🗑️ 已删除树（${nodes.length} 个节点移入回收站）`,
+      notice: `🗑️ 已删除 ${deletedTrees} 棵树（${deletedNodes} 个节点移入回收站）`,
       noticeTone: "info",
     });
   },
@@ -1011,9 +1219,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       `chat.currentNodeId.${treeId}`,
       null
     );
-    set({ currentTreeId: treeId, currentNodeId: saved });
+    set({ currentTreeId: treeId, currentNodeId: saved, pendingDocs: [] });
+    await get().loadDocuments();
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
+    // 切树后把树状图视口聚焦到新树（整树 fitView）
+    useGraphStore.getState().requestTreeFocus();
   },
 
   regenerate: async (nodeId) => {
@@ -1027,35 +1238,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return;
     }
 
-    // 上下文：父链 + 当前问题（排除旧回答）
-    const ctx = await treeService.getContextPath(nodeId);
-    const contextMessages: ContextMessage[] = ctx.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-    while (
-      contextMessages.length > 0 &&
-      contextMessages[contextMessages.length - 1].role === "assistant"
-    ) {
-      contextMessages.pop();
-    }
-    const messages: ChatMessage[] = contextMessages;
-    if (messages.length === 0) {
-      messages.push({ role: "user", content: node.question });
-    }
-    // 引用：重新生成时保持引用上下文（引用文本已持久化在节点 quote 列）
-    if (node.quote) {
-      while (
-        messages.length > 0 &&
-        messages[messages.length - 1].role === "user"
-      ) {
-        messages.pop();
+    // 上下文：与首次发送走同一条流水线（继承策略 + 压缩 + 引用），
+    // 仅额外去掉末尾的旧回答
+    const compression = await loadCompressionSettings(repos);
+    const regenDocBlocks: DocContextBlock[] = [];
+    const regenImages: ChatImage[] = [];
+    for (const ref of node.docRefs ?? []) {
+      const doc = await repos.documents.getById(ref.docId);
+      if (!doc) continue;
+      if (doc.kind === "image") {
+        try {
+          regenImages.push({
+            mimeType: doc.mimeType || "image/jpeg",
+            data: await readFileBase64(doc.filePath),
+            width: doc.width,
+            height: doc.height,
+          });
+        } catch {
+          // 文件缺失：跳过
+        }
+      } else {
+        regenDocBlocks.push(buildDocContext(doc, ref.pages));
       }
-      messages.push({
-        role: "user",
-        content: `【引用内容】\n${node.quote}\n\n请结合以上引用及其出处上下文，回答：${node.question}`,
-      });
     }
+    if (regenImages.length > 0 && !config.supportsVision) {
+      set({
+        uiError:
+          "当前 AI 配置未开启读图能力，无法重新生成带图片的回答。请先在 设置 → AI 配置 勾选「支持读图」。",
+      });
+      return;
+    }
+    const prepared = await prepareOutgoing(
+      { repos, treeService, currentTreeId: get().currentTreeId },
+      {
+        nodeId,
+        documents: regenDocBlocks,
+        images: regenImages,
+        dropTrailingAssistant: true,
+        // 引用文本已持久化在节点上（出处节点 id 未存，无法还原问答）
+        quoteText: node.quote || undefined,
+        compression,
+        compressFn: (group) => summarizeGroup(group, config),
+      }
+    );
+    const messages: ChatMessage[] = prepared.messages;
 
     // 流式生成（节流更新）
     const controller = new AbortController();
@@ -1213,6 +1439,72 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         set({ uiError: "导入失败：未识别到标题结构（需要 # 标题）" });
       }
+    } catch (err) {
+      set({ uiError: `导入失败：${(err as Error).message}` });
+    }
+  },
+
+  importDeepSeekExport: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    try {
+      const picked = await chooseDirectory();
+      if (!picked) return;
+
+      // 兼容两种选法：选到导出根目录，或直接选 chat_sessions
+      let entries = await listDir(picked);
+      let sessionDir = picked;
+      if (entries.some((e) => e.isDir && e.name === "chat_sessions")) {
+        sessionDir = joinPath(picked, "chat_sessions");
+        entries = await listDir(sessionDir);
+      }
+      const files = entries.filter(
+        (e) => !e.isDir && e.name.toLowerCase().endsWith(".json")
+      );
+      if (files.length === 0) {
+        set({
+          uiError:
+            "所选目录里没有找到 DeepSeek 会话文件（应为 chat_sessions/*.json）",
+        });
+        return;
+      }
+
+      set({
+        notice: `📥 正在解析 ${files.length} 个会话…`,
+        noticeTone: "info",
+      });
+
+      const sessions: DeepSeekSession[] = [];
+      let unreadable = 0;
+      for (const file of files) {
+        try {
+          const content = await invoke<string>("read_text_file", {
+            path: file.path,
+          });
+          sessions.push(parseDeepSeekSession(JSON.parse(content)));
+        } catch {
+          unreadable++;
+        }
+      }
+
+      const existingNames = (await repos.trees.list()).map((t) => t.name);
+      const summary = await importDeepSeekSessions(repos, sessions, {
+        existingNames,
+      });
+
+      // 刷新树列表与树状图
+      const trees = await repos.trees.list();
+      set({ trees });
+      useGraphStore.getState().bumpGraphVersion();
+
+      const parts = [
+        `已导入 ${summary.trees} 棵树 / ${summary.nodes} 个节点`,
+        summary.skippedSessions.length
+          ? `跳过 ${summary.skippedSessions.length} 个空会话`
+          : "",
+        unreadable ? `${unreadable} 个文件无法解析` : "",
+      ].filter(Boolean);
+      set({ notice: `📥 ${parts.join("，")}`, noticeTone: "success" });
     } catch (err) {
       set({ uiError: `导入失败：${(err as Error).message}` });
     }

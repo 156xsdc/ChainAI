@@ -31,7 +31,9 @@ import { Markdown } from "../chat/Markdown";
 import type { Note } from "../../core/db";
 
 const MIN_W = 220;
-const MAX_W = 420;
+/** 聊天区至少保留的宽度：便签板本身不再设固定上限，只保证聊天区不被挤没 */
+const CHAT_MIN_W = 320;
+const maxWidth = () => Math.max(MIN_W, window.innerWidth - CHAT_MIN_W);
 const COLORS = ["#fafafa", "#fef3c7", "#dcfce7", "#dbeafe", "#fce7f3", "#f3e8ff"];
 
 export function RightSidebar() {
@@ -67,12 +69,29 @@ export function RightSidebar() {
     if (!repos) return;
     void repos.settings
       .get<number>("layout.rightWidth", 280)
-      .then((w) => setWidth(w));
+      .then((w) => setWidth(Math.min(maxWidth(), Math.max(MIN_W, w))));
   }, [repos]);
 
   useEffect(() => {
     widthRef.current = width;
   }, [width]);
+
+  // 窗口变窄时把宽度收进可用范围（不做固定上限，只是不超出窗口）
+  useEffect(() => {
+    const onResize = () => {
+      const next = Math.min(widthRef.current, maxWidth());
+      if (next !== widthRef.current) {
+        widthRef.current = next;
+        setWidth(next);
+        useChatStore
+          .getState()
+          .repos?.settings.set("layout.rightWidth", next)
+          .catch(() => {});
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   /** 拖拽调整宽度（手柄在左缘，向左拖加宽） */
   const startDrag = (e: React.MouseEvent) => {
@@ -82,7 +101,7 @@ export function RightSidebar() {
     const startW = width;
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
-      const next = Math.min(MAX_W, Math.max(MIN_W, startW + (startX - ev.clientX)));
+      const next = Math.min(maxWidth(), Math.max(MIN_W, startW + (startX - ev.clientX)));
       widthRef.current = next; // 同步 ref，避免 mouseup 时读到滞后值
       setWidth(next);
     };

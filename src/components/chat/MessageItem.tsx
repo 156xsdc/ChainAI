@@ -6,6 +6,7 @@ import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Brain,
   ChevronLeft,
+  Paperclip,
   ChevronRight,
   Copy,
   Quote,
@@ -132,6 +133,34 @@ export const MessageItem = memo(function MessageItem({
           >
             {item.content}
           </div>
+          {/* 附带资料：文档名 + 页码范围 */}
+          {item.docRefs && item.docRefs.length > 0 && (
+            <div className="mt-1 flex flex-wrap justify-end gap-1.5">
+              {item.docRefs.map((ref) => (
+                <span
+                  key={ref.docId}
+                  className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-2 py-1 text-[10px] text-neutral-500"
+                  title={`${ref.name}（第 ${ref.pages === "all" ? "全部" : ref.pages} 页）`}
+                >
+                  {ref.kind === "image" && ref.thumb ? (
+                    <img
+                      src={ref.thumb}
+                      alt=""
+                      className="h-4 w-4 shrink-0 rounded border border-neutral-200 object-cover"
+                    />
+                  ) : (
+                    <Paperclip size={9} className="shrink-0 text-neutral-400" />
+                  )}
+                  <span className="max-w-[180px] truncate">{ref.name}</span>
+                  {ref.kind !== "image" && (
+                    <span className="shrink-0 text-neutral-400">
+                      {ref.pages === "all" ? "全部" : `p.${ref.pages}`}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
           {/* 引用内容：钉在发送的消息下方，单行截断 */}
           {item.quote && (
             <div

@@ -45,8 +45,44 @@ export interface TreeNode {
   quote: string;
   /** 模型思考过程（空串 = 无思考） */
   reasoning: string;
+  /** 该节点附带的资料引用（树级资料库里的文档 + 页码范围） */
+  docRefs: DocRef[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** 资料引用：某条消息用了哪份文档的哪些页 */
+export interface DocRef {
+  docId: string;
+  name: string;
+  /** 页码范围文本，如 "1-5" / "3" / "all"（图片为空串） */
+  pages: string;
+  /** 资料类型：PDF（注入文本）/ 图片（随消息发多模态） */
+  kind?: "pdf" | "image";
+  /** 图片缩略图（data URL，仅图片有，用于消息里显示） */
+  thumb?: string;
+}
+
+/** 文档（树级资料库：已提取文字的 PDF） */
+export interface Document {
+  id: string;
+  treeId: string;
+  name: string;
+  /** 原文件路径（数据目录 attachments/ 下的副本） */
+  filePath: string;
+  pageCount: number;
+  /** 每页提取的文字（图片为空数组） */
+  pages: string[];
+  /** 资料类型：pdf / image */
+  kind: "pdf" | "image";
+  /** 图片 MIME（如 image/jpeg） */
+  mimeType: string;
+  /** 图片尺寸（token 估算用） */
+  width: number;
+  height: number;
+  /** 缩略图 data URL（仅图片） */
+  thumb: string;
+  createdAt: string;
 }
 
 /** edges 表行（原始） */

@@ -125,6 +125,14 @@ export async function initSchema(db: SqlBackend): Promise<void> {
   } catch {
     // 列已存在
   }
+  // 兼容旧库：trees 表补充 folder 列（分类名，空 = 未分类）
+  try {
+    await db.execute(
+      `ALTER TABLE trees ADD COLUMN folder TEXT NOT NULL DEFAULT ''`
+    );
+  } catch {
+    // 列已存在
+  }
   // 默认树：无树时创建；旧节点归入默认树
   const treeRows = await db.select<{ id: string }>(`SELECT id FROM trees LIMIT 1`);
   if (treeRows.length === 0) {

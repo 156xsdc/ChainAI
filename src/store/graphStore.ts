@@ -11,6 +11,9 @@ interface GraphStore {
   manualPositions: Record<string, { x: number; y: number }>;
   /** 分组/结构变化版本号（触发树状图数据刷新） */
   graphVersion: number;
+  /** 请求把视口聚焦到当前整棵树（切换树时 +1） */
+  treeFocusToken: number;
+  requestTreeFocus: () => void;
   setManualPosition: (nodeId: string, pos: { x: number; y: number }) => void;
   /** 批量更新手动位置（仅内存，不写库——分组拖拽中高频调用） */
   setManualPositionsLocal: (
@@ -26,8 +29,12 @@ interface GraphStore {
 export const useGraphStore = create<GraphStore>((set, get) => ({
   manualPositions: {},
   graphVersion: 0,
+  treeFocusToken: 0,
 
   bumpGraphVersion: () => set((s) => ({ graphVersion: s.graphVersion + 1 })),
+
+  requestTreeFocus: () =>
+    set((s) => ({ treeFocusToken: s.treeFocusToken + 1 })),
 
   setManualPosition: (nodeId, pos) => {
     const next = { ...get().manualPositions, [nodeId]: pos };

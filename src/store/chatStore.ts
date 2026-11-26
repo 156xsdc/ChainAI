@@ -25,7 +25,14 @@ import {
   openJsonFile,
   saveTextFile,
   openTextFile,
+  chooseDirectory,
+  listDir,
 } from "../core/io/files";
+import {
+  importDeepSeekSessions,
+  parseDeepSeekSession,
+  type DeepSeekSession,
+} from "../core/importExport/deepseek";
 import { createNoteFile } from "../core/notes/noteService";
 import { cleanupOnce, purgeExpired } from "../core/cleanup/service";
 import { useUIStore } from "./uiStore";
@@ -160,6 +167,10 @@ interface ChatState {
   renameTree: (treeId: string, name: string) => Promise<void>;
   /** 删除树（节点移入回收站） */
   deleteTree: (treeId: string) => Promise<void>;
+  /** 批量删除树（节点软删除并进回收站）；当前树被删时自动切到剩余第一棵 */
+  deleteTrees: (treeIds: string[]) => Promise<void>;
+  /** 批量归类：folder 为空 = 取消分类（回到未分类） */
+  setTreesFolder: (treeIds: string[], folder: string) => Promise<void>;
   /** 切换当前树 */
   switchTree: (treeId: string) => Promise<void>;
   /** 重新生成节点回答（追加新版本，保留历史） */
@@ -172,6 +183,8 @@ interface ChatState {
   exportMarkdown: () => Promise<void>;
   /** 导入 Markdown 文档为树（追加） */
   importMarkdown: () => Promise<void>;
+  /** 导入 DeepSeek 导出包：一个会话一棵树，一问一答一个节点 */
+  importDeepSeekExport: () => Promise<void>;
   /** 引用：用户选中的 AI 回答片段（nodeId + 文本），随消息发送 */
   quote: { nodeId: string; text: string } | null;
   setQuote: (quote: { nodeId: string; text: string } | null) => void;
@@ -928,29 +941,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   deleteTree: async (treeId) => {
+    await get().deleteTrees([treeId]);
+  },
+
+  setTreesFolder: async (treeIds, folder) => {
     const { repos } = get();
-    if (!repos) return;
-    // 树内节点软删除 + 回收站
-    const nodes = await repos.nodes.getAllActive(treeId);
-    // 批量软删除 + 回收站记录
-    await repos.nodes.softDeleteMany(nodes.map((n) => n.id));
-    await repos.recycleBin.addMany(nodes.map((n) => n.id));
-    // 清理该树的会话（避免孤儿会话残留）
-    await repos.backend.execute(
-      `DELETE FROM sessions WHERE start_node_id IN (SELECT id FROM nodes WHERE tree_id = ?)`,
-      [treeId]
-    );
-    await repos.trees.remove(treeId);
-    // 切到剩余第一棵树（或新建默认树）
+    if (!repos || treeIds.length === 0) return;
+    await repos.trees.setFolder(treeIds, folder);
     const trees = await repos.trees.list();
-    const next =
-      trees[0] ?? (await repos.trees.create("默认树"));
-    await repos.settings.set("chat.currentTreeId", next.id);
-    set({ currentTreeId: next.id, currentNodeId: null, trees });
+    set({ trees });
+    const name = folder.trim();
+    set({
+      notice: name
+        ? `📁 已把 ${treeIds.length} 棵树归到「${name}」`
+        : `📁 已取消 ${treeIds.length} 棵树的分类`,
+      noticeTone: "success",
+    });
+  },
+
+  deleteTrees: async (treeIds) => {
+    const { repos } = get();
+    if (!repos || treeIds.length === 0) return;
+
+    let deletedNodes = 0;
+    let deletedTrees = 0;
+    for (const treeId of treeIds) {
+      // 树内活跃节点：软删除 + 进回收站（可恢复）
+      const nodes = await repos.nodes.getAllActive(treeId);
+      if (nodes.length > 0) {
+        await repos.nodes.softDeleteMany(nodes.map((n) => n.id));
+        await repos.recycleBin.addMany(nodes.map((n) => n.id));
+        deletedNodes += nodes.length;
+      }
+      // 清理该树的会话（避免孤儿会话残留）
+      await repos.backend.execute(
+        `DELETE FROM sessions WHERE start_node_id IN (SELECT id FROM nodes WHERE tree_id = ?)`,
+        [treeId]
+      );
+      await repos.trees.remove(treeId);
+      deletedTrees++;
+    }
+
+    // 当前树被删 → 切到剩余第一棵；一棵都不剩则新建默认树
+    let trees = await repos.trees.list();
+    const cur = get().currentTreeId;
+    if (!cur || !trees.some((t) => t.id === cur)) {
+      if (trees.length === 0) trees = [await repos.trees.create("默认树")];
+      const next = trees[0];
+      await repos.settings.set("chat.currentTreeId", next.id);
+      set({ trees, currentTreeId: next.id, currentNodeId: null });
+    } else {
+      set({ trees });
+    }
+
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
+    useGraphStore.getState().requestTreeFocus();
     set({
-      notice: `🗑️ 已删除树（${nodes.length} 个节点移入回收站）`,
+      notice: `🗑️ 已删除 ${deletedTrees} 棵树（${deletedNodes} 个节点移入回收站）`,
       noticeTone: "info",
     });
   },
@@ -967,6 +1015,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ currentTreeId: treeId, currentNodeId: saved });
     await get().refreshPath();
     useGraphStore.getState().bumpGraphVersion();
+    // 切树后把树状图视口聚焦到新树（整树 fitView）
+    useGraphStore.getState().requestTreeFocus();
   },
 
   regenerate: async (nodeId) => {
@@ -1152,6 +1202,72 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else {
         set({ uiError: "导入失败：未识别到标题结构（需要 # 标题）" });
       }
+    } catch (err) {
+      set({ uiError: `导入失败：${(err as Error).message}` });
+    }
+  },
+
+  importDeepSeekExport: async () => {
+    const { repos } = get();
+    if (!repos) return;
+    try {
+      const picked = await chooseDirectory();
+      if (!picked) return;
+
+      // 兼容两种选法：选到导出根目录，或直接选 chat_sessions
+      let entries = await listDir(picked);
+      let sessionDir = picked;
+      if (entries.some((e) => e.isDir && e.name === "chat_sessions")) {
+        sessionDir = joinPath(picked, "chat_sessions");
+        entries = await listDir(sessionDir);
+      }
+      const files = entries.filter(
+        (e) => !e.isDir && e.name.toLowerCase().endsWith(".json")
+      );
+      if (files.length === 0) {
+        set({
+          uiError:
+            "所选目录里没有找到 DeepSeek 会话文件（应为 chat_sessions/*.json）",
+        });
+        return;
+      }
+
+      set({
+        notice: `📥 正在解析 ${files.length} 个会话…`,
+        noticeTone: "info",
+      });
+
+      const sessions: DeepSeekSession[] = [];
+      let unreadable = 0;
+      for (const file of files) {
+        try {
+          const content = await invoke<string>("read_text_file", {
+            path: file.path,
+          });
+          sessions.push(parseDeepSeekSession(JSON.parse(content)));
+        } catch {
+          unreadable++;
+        }
+      }
+
+      const existingNames = (await repos.trees.list()).map((t) => t.name);
+      const summary = await importDeepSeekSessions(repos, sessions, {
+        existingNames,
+      });
+
+      // 刷新树列表与树状图
+      const trees = await repos.trees.list();
+      set({ trees });
+      useGraphStore.getState().bumpGraphVersion();
+
+      const parts = [
+        `已导入 ${summary.trees} 棵树 / ${summary.nodes} 个节点`,
+        summary.skippedSessions.length
+          ? `跳过 ${summary.skippedSessions.length} 个空会话`
+          : "",
+        unreadable ? `${unreadable} 个文件无法解析` : "",
+      ].filter(Boolean);
+      set({ notice: `📥 ${parts.join("，")}`, noticeTone: "success" });
     } catch (err) {
       set({ uiError: `导入失败：${(err as Error).message}` });
     }

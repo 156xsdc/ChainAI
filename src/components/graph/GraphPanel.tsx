@@ -5,9 +5,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
+  ChevronRight,
   Columns2,
   LayoutTemplate,
   Maximize2,
+  ListChecks,
   Pencil,
   Plus,
   Trash2,
@@ -20,6 +22,7 @@ import { useGraphStore } from "../../store/graphStore";
 import { useClickOutside } from "../../hooks/useClickOutside";
 import { confirmDialog, promptDialog } from "../../store/dialogStore";
 import { CreateTreeDialog } from "../modals/CreateTreeDialog";
+import { TreeManagerDialog } from "../modals/TreeManagerDialog";
 import { GraphCanvas } from "./GraphCanvas";
 
 const MIN_W = 260;
@@ -34,6 +37,7 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
   const setLeftPanelWidth = useUIStore((s) => s.setLeftPanelWidth);
   const resetLayout = useGraphStore((s) => s.resetLayout);
   const clearAllChat = useChatStore((s) => s.clearAllChat);
+  const repos = useChatStore((s) => s.repos);
   const trees = useChatStore((s) => s.trees);
   const currentTreeId = useChatStore((s) => s.currentTreeId);
 
@@ -64,7 +68,53 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
   }, [setLeftPanelWidth]);
 
   const currentTree = trees.find((t) => t.id === currentTreeId);
+
+  // 折叠状态：打开面板时从设置恢复一次
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const p = await repos?.settings.get<string[]>("graph.collapsedFolders", []);
+      if (!cancelled && Array.isArray(p)) setCollapsedFolders(new Set(p));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repos]);
+
+  const toggleFolder = (key: string) => {
+    const next = new Set(collapsedFolders);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setCollapsedFolders(next);
+    void repos?.settings.set("graph.collapsedFolders", [...next]);
+  };
+
+  /** 按分类分组：有分类的按名称排序在前，未分类放最后 */
+  const groupedTrees: Array<{ key: string; label: string; list: typeof trees }> =
+    (() => {
+      const map = new Map<string, typeof trees>();
+      for (const t of trees) {
+        const key = t.folder ?? "";
+        const list = map.get(key);
+        if (list) list.push(t);
+        else map.set(key, [t]);
+      }
+      const entries = [...map.entries()]
+        .filter(([folder]) => folder !== "")
+        .sort((a, b) => a[0].localeCompare(b[0], "zh"))
+        .map(([folder, list]) => ({ key: folder, label: folder, list }));
+      const ungrouped = map.get("");
+      if (ungrouped?.length) {
+        entries.push({ key: "", label: "未分组", list: ungrouped });
+      }
+      return entries;
+    })();
   const [createTreeOpen, setCreateTreeOpen] = useState(false);
+  const [treeManagerOpen, setTreeManagerOpen] = useState(false);
+  /** 折叠的分类（持久化到 settings，key = graph.collapsedFolders；空串代表「未分组」） */
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+    new Set()
+  );
 
   /** 新建树（含上下文策略选择） */
   const handleCreateTree = () => {
@@ -159,41 +209,89 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
           {treeMenuOpen && (
             <div
               ref={treeMenuRef}
-              className="absolute left-0 top-full z-40 mt-1 w-52 rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
+              className="absolute left-0 top-full z-40 mt-1 max-h-[70vh] w-52 overflow-y-auto rounded-xl border border-neutral-200 bg-white py-1 shadow-lg"
             >
               <div className="px-3 py-1 text-[10px] text-neutral-400">切换树</div>
-              {trees.map((t) => (
-                <div key={t.id} className="flex items-center">
-                  <button
-                    className={`min-w-0 flex-1 px-3 py-1.5 text-left text-xs hover:bg-neutral-100 ${
-                      t.id === currentTreeId
-                        ? "font-medium text-neutral-800"
-                        : "text-neutral-600"
-                    }`}
-                    onClick={() => {
-                      void switchTree(t.id);
-                      setTreeMenuOpen(false);
-                    }}
-                  >
-                    {t.name}
-                  </button>
-                  {t.id === currentTreeId && (
+              {groupedTrees.map((group) => {
+                // 「未分组」只是一段标题，不参与折叠
+                const collapsible = group.key !== "";
+                const collapsed = collapsible && collapsedFolders.has(group.key);
+                return (
+                <div key={group.key || "__ungrouped__"}>
+                  {collapsible ? (
                     <button
-                      className="mr-1 rounded p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700"
-                      title="重命名"
-                      onClick={() => void handleRenameTree()}
+                      className="flex w-full items-center gap-1 px-2.5 pt-1.5 pb-0.5 text-[10px] text-neutral-400 hover:text-neutral-600"
+                      onClick={() => toggleFolder(group.key)}
+                      title={collapsed ? "展开分组" : "折叠分组"}
                     >
-                      <Pencil size={10} />
+                      {collapsed ? (
+                        <ChevronRight size={10} className="shrink-0" />
+                      ) : (
+                        <ChevronDown size={10} className="shrink-0" />
+                      )}
+                      <span className="truncate">{group.label}</span>
+                      {collapsed &&
+                        group.list.some((t) => t.id === currentTreeId) && (
+                          <span className="shrink-0 text-[9px] text-neutral-500">
+                            当前
+                          </span>
+                        )}
+                      <span className="ml-auto shrink-0 text-neutral-300">
+                        {group.list.length}
+                      </span>
                     </button>
+                  ) : (
+                    <div className="flex items-center gap-1 px-3 pt-1.5 pb-0.5 text-[10px] text-neutral-400">
+                      <span className="truncate">{group.label}</span>
+                      <span className="ml-auto shrink-0 text-neutral-300">
+                        {group.list.length}
+                      </span>
+                    </div>
                   )}
+                  {!collapsed && group.list.map((t) => (
+                    <div key={t.id} className="flex items-center">
+                      <button
+                        className={`min-w-0 flex-1 px-3 py-1.5 text-left text-xs hover:bg-neutral-100 ${
+                          t.id === currentTreeId
+                            ? "font-medium text-neutral-800"
+                            : "text-neutral-600"
+                        }`}
+                        onClick={() => {
+                          void switchTree(t.id);
+                          setTreeMenuOpen(false);
+                        }}
+                      >
+                        {t.name}
+                      </button>
+                      {t.id === currentTreeId && (
+                        <button
+                          className="mr-1 rounded p-1 text-neutral-300 hover:bg-neutral-100 hover:text-neutral-700"
+                          title="重命名"
+                          onClick={() => void handleRenameTree()}
+                        >
+                          <Pencil size={10} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+                );
+              })}
               <div className="my-1 h-px bg-neutral-100" />
               <button
                 className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs text-neutral-600 hover:bg-neutral-100"
                 onClick={() => void handleCreateTree()}
               >
                 <Plus size={12} /> 新建树
+              </button>
+              <button
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs text-neutral-600 hover:bg-neutral-100"
+                onClick={() => {
+                  setTreeMenuOpen(false);
+                  setTreeManagerOpen(true);
+                }}
+              >
+                <ListChecks size={12} /> 批量管理…
               </button>
               {currentTree && (
                 <button
@@ -262,6 +360,10 @@ export function GraphPanel({ flexible = false }: { flexible?: boolean }) {
       />
 
       {/* 新建树对话框（含上下文策略） */}
+      <TreeManagerDialog
+        open={treeManagerOpen}
+        onClose={() => setTreeManagerOpen(false)}
+      />
       <CreateTreeDialog
         open={createTreeOpen}
         onClose={() => setCreateTreeOpen(false)}
